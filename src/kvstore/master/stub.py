@@ -1,23 +1,14 @@
-"""Small registration server that unblocks Worker development.
-
-This is intentionally not the final scheduler. It only proves that the shared
-framing and REGISTER/ACK contract work over a real TCP socket.
-"""
-
-from __future__ import annotations
-
 import argparse
 import socketserver
 import threading
 from dataclasses import dataclass
-from typing import cast
 
 from kvstore.common.config import DEFAULT_MASTER_BIND_HOST, DEFAULT_MASTER_PORT
 from kvstore.common.models import Message, MessageType, RegisterPayload
 from kvstore.common.protocol import ProtocolError, receive_message, send_message
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class RegisteredWorker:
     worker_id: str
     host: str
@@ -49,7 +40,7 @@ class RegistrationState:
 
 class RegistrationHandler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
-        server = cast(RegistrationServer, self.server)
+        server = self.server
         request_id = "unknown"
         try:
             message = receive_message(self.request)
@@ -79,7 +70,8 @@ class RegistrationHandler(socketserver.BaseRequestHandler):
             try:
                 send_message(self.request, response)
             except OSError:
-                pass
+                # 상대 노드가 이미 연결을 닫았다면 오류 응답을 보낼 수 없으므로 종료한다.
+                return
 
 
 class RegistrationServer(socketserver.ThreadingTCPServer):
@@ -92,7 +84,7 @@ class RegistrationServer(socketserver.ThreadingTCPServer):
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Master registration stub")
+    parser = argparse.ArgumentParser(description="Master 등록 확인용 서버")
     parser.add_argument("--host", default=DEFAULT_MASTER_BIND_HOST)
     parser.add_argument("--port", default=DEFAULT_MASTER_PORT, type=int)
     return parser
@@ -102,11 +94,11 @@ def main() -> None:
     args = build_argument_parser().parse_args()
     with RegistrationServer((args.host, args.port)) as server:
         host, port = server.server_address
-        print(f"Master registration stub listening on {host}:{port}", flush=True)
+        print(f"Master 등록 서버 실행: {host}:{port}", flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
-            print("Stopping Master registration stub", flush=True)
+            print("Master 등록 서버를 종료합니다.", flush=True)
 
 
 if __name__ == "__main__":

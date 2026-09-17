@@ -1,16 +1,8 @@
-"""Thread-safe logical clock used by all simulated events."""
-
-from __future__ import annotations
-
 import threading
 
 
 class LogicalClock:
-    """A monotonic, process-local simulation clock.
-
-    The clock deliberately does not read wall-clock time or sleep. Callers advance
-    it when a simulated processing or communication event occurs.
-    """
+    """실제 시간을 기다리지 않고 과제의 가상 시간을 기록한다."""
 
     def __init__(self, initial: float = 0.0) -> None:
         if initial < 0:
@@ -30,7 +22,7 @@ class LogicalClock:
             return self._value
 
     def observe(self, remote_value: float) -> float:
-        """Merge a clock value received from another node without going backward."""
+        """다른 노드의 시각을 반영하되 현재 시각보다 작아지지 않게 한다."""
         if remote_value < 0:
             raise ValueError("remote clock value must be non-negative")
         with self._lock:

@@ -1,21 +1,16 @@
-"""Length-prefixed JSON framing for every TCP connection."""
-
-from __future__ import annotations
-
 import json
 import socket
 import struct
-from typing import Final
 
 from .models import Message
 
 
-HEADER: Final[struct.Struct] = struct.Struct("!I")
-MAX_FRAME_BYTES: Final[int] = 1_048_576
+HEADER = struct.Struct("!I")
+MAX_FRAME_BYTES = 1_048_576
 
 
 class ProtocolError(Exception):
-    """Raised for malformed, truncated, or oversized protocol frames."""
+    """프레임 형식이 잘못됐거나 데이터가 잘렸거나 너무 클 때 발생한다."""
 
 
 def encode_message(message: Message) -> bytes:
