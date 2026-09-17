@@ -19,7 +19,7 @@ P2P 부하 분산, 실패 작업 재할당을 수행하는 Key-Value Store 시�
 | 구성요소 | 실행 위치 | 역할 |
 | --- | --- | --- |
 | Master Node | AWS EC2 | 작업 5,000개 생성, Queue 기반 분배, 결과 저장, 실패 재할당, 전체 종료 |
-| Worker Node 1~4 | 조원 로컬 PC | Ready Queue 관리, 작업 처리, 결과 보고, P2P 작업 이전 |
+| Worker Node 1~4 | 한 로컬 PC의 독립 Thread | Ready Queue 관리, 작업 처리, 결과 보고, P2P 작업 이전 |
 | Common | 모든 노드 | TCP 메시지, 공통 자료구조, 논리 시계 |
 
 - Key: 중복 없는 4자리 16진수 문자열
@@ -33,8 +33,9 @@ P2P 부하 분산, 실패 작업 재할당을 수행하는 Key-Value Store 시�
 
 - Python 3.11 이상
 - Master: Ubuntu Server 24.04 LTS, AWS EC2
-- Worker: Python 3.11을 실행할 수 있는 Windows 또는 Linux PC
+- Worker: 한 로컬 PC에서 실행되는 네 개의 독립 Worker Thread
 - 통신: Master↔Worker 및 Worker↔Worker TCP socket
+- P2P: `127.0.0.1:6001`~`127.0.0.1:6004`의 서로 다른 TCP endpoint
 
 ## 4. 설치 및 실행
 
