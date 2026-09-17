@@ -1,0 +1,57 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build and package outputs
+build/
+dist/
+*.egg-info/
+*.zip
+
+# Runtime and temporary outputs
+.cache/
+tmp/
+temp/
+logs/
+*.log
+*.pid
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Demonstration media
+*.mp4
+*.mov
+*.avi
+
+# Keep required assignment text deliverables trackable.
+# Do not add a blanket *.txt rule.
