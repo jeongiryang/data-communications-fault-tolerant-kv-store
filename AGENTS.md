@@ -46,6 +46,7 @@ Codex를 포함한 모든 작업자는 요약 문서와 함께 다음 원본 PDF
 - 로그 형식은 `[clock] NODE | EVENT | STATUS | message`를 사용한다.
 - STATUS는 `INFO`, `SUCCESS`, `FAIL`, `WARN`만 사용한다.
 - 5,000개 작업이 모두 성공한 뒤 통계 출력, 로그 저장, 소켓·Thread 정리 순으로 정상 종료한다.
+- 시연 영상에는 목소리 설명이 필수이며, 자막은 필요하지 않다.
 
 ## 공통 설계 규칙
 
