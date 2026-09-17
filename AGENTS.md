@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **필수 과제 지침서:** [`docs/assignment-requirements.md`](docs/assignment-requirements.md)
+>
+> 모든 사람과 AI 에이전트는 계획 수립·코드 작성·수정·검토 전에 위 문서를 처음부터 끝까지 읽어야 한다. Issue나 이 문서의 요약만 보고 과제 요구사항을 판단하지 않는다. 과제 충족 여부와 최종 체크리스트는 해당 문서를 직접 기준으로 검증한다.
+
 ## 목적
 
 이 문서는 이 저장소에서 작업하는 사람과 AI 에이전트가 따라야 할 공통 작업 규칙이다. 과제 요구사항 자체는 `docs/assignment-requirements.md`를 기준으로 판단한다.
