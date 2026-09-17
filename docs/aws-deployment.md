@@ -8,7 +8,8 @@
 - Account: 신규 AWS **Free plan**; Paid plan으로 업그레이드하지 않음
 - Region: `ap-northeast-2` (Seoul)
 - EC2: `t3.micro` x86_64
-- OS: Ubuntu Server 24.04 LTS
+- OS: Ubuntu Server 26.04 LTS
+- CPU credit specification: `standard` (무제한 크레딧 추가 사용 방지)
 - Master application port: TCP `5000`
 - 관리: SSH 또는 EC2 Instance Connect
 - 데이터베이스·Load Balancer·RDS·NAT Gateway: 사용하지 않음
@@ -80,6 +81,10 @@ cd /opt/kvstore
 
 로컬 PC에서 `smoke_client`를 실행해 `REGISTER -> ACK`가 성공하는지 확인한다.
 이 검증 후 실제 Master entry point로 교체한다.
+
+Ubuntu 26.04의 첫 부팅에서는 패키지 인덱스와 Python 구성요소를 갱신하므로 자동
+설치 완료까지 약 3~5분이 걸릴 수 있다. EC2 상태 검사 통과만으로 배포 완료를
+판단하지 않고, `cloud-init` 완료와 `REGISTER -> ACK`를 최종 기준으로 사용한다.
 
 ## 4. 배포 전 네트워크 점검
 

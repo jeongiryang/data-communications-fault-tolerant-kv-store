@@ -15,6 +15,16 @@
 포트와 주소는 기본값일 뿐이며 CLI/config로 주입한다. 개인 공인 IP는 문서나 코드에
 커밋하지 않는다.
 
+## 구축 완료 상태 (2026-09-17)
+
+- AWS Free plan과 잔여 크레딧을 확인했다.
+- Seoul 리전에 Ubuntu 26.04 LTS `t3.micro`, 8 GiB gp3 Master를 만들었다.
+- CPU credit specification을 `standard`로 설정했다.
+- SSH 22와 Master 5000은 Worker 장소의 현재 공인 IP `/32`에서만 허용했다.
+- 저장소 설치와 `kvstore-master.service` 시작을 `cloud-init`으로 자동화했다.
+- 로컬 Worker smoke client의 `REGISTER -> ACK` 외부 연결을 확인했다.
+- 공인 IP와 인스턴스 ID 같은 실행 시점 값은 저장소에 기록하지 않는다.
+
 ## 권장 네트워크 토폴로지
 
 최종 시연의 기본 구성은 **한 로컬 PC에서 네 Worker를 각각 독립 Thread로 실행**하는

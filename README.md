@@ -32,7 +32,7 @@ P2P 부하 분산, 실패 작업 재할당을 수행하는 Key-Value Store 시�
 ## 3. 실행 환경
 
 - Python 3.11 이상
-- Master: Ubuntu Server 24.04 LTS, AWS EC2
+- Master: Ubuntu Server 26.04 LTS, AWS EC2
 - Worker: 한 로컬 PC에서 실행되는 네 개의 독립 Worker Thread
 - 통신: Master↔Worker 및 Worker↔Worker TCP socket
 - P2P: `127.0.0.1:6001`~`127.0.0.1:6004`의 서로 다른 TCP endpoint
