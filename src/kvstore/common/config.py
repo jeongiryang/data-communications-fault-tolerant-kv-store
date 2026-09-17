@@ -1,7 +1,3 @@
-"""Shared configuration defaults and validation helpers."""
-
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 
@@ -17,7 +13,7 @@ def validate_port(port: int) -> int:
     return port
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class MasterConfig:
     host: str = DEFAULT_MASTER_BIND_HOST
     port: int = DEFAULT_MASTER_PORT
@@ -31,7 +27,7 @@ class MasterConfig:
             raise ValueError("the assignment requires exactly four workers")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class WorkerConfig:
     worker_id: str
     master_host: str

@@ -1,7 +1,3 @@
-"""Command-line client for validating Worker registration."""
-
-from __future__ import annotations
-
 import argparse
 import json
 import socket
@@ -44,7 +40,7 @@ def register_worker(
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Worker registration smoke client")
+    parser = argparse.ArgumentParser(description="Worker 등록 확인용 클라이언트")
     parser.add_argument("--worker-id", required=True)
     parser.add_argument("--master-host", required=True)
     parser.add_argument("--master-port", default=DEFAULT_MASTER_PORT, type=int)

@@ -1,10 +1,8 @@
-"""Versioned data structures shared by Master and every Worker."""
-
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any
+
+from .config import DEFAULT_QUEUE_CAPACITY
 
 
 PROTOCOL_VERSION = 1
@@ -24,7 +22,7 @@ class MessageType(str, Enum):
     ERROR = "ERROR"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class Task:
     task_id: str
     key: str
@@ -47,28 +45,28 @@ class Task:
             raise ValueError("attempt must be non-negative")
         if self.enqueued_at < 0:
             raise ValueError("enqueued_at must be non-negative")
-        object.__setattr__(self, "key", normalized_key)
+        self.key = normalized_key
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "Task":
+    def from_dict(cls, data: dict[str, Any]) -> "Task":
+        previous_worker_id = data.get("previous_worker_id")
+        if previous_worker_id is not None:
+            previous_worker_id = str(previous_worker_id)
+
         return cls(
             task_id=str(data["task_id"]),
             key=str(data["key"]),
             value=int(data["value"]),
             attempt=int(data.get("attempt", 0)),
-            previous_worker_id=(
-                str(data["previous_worker_id"])
-                if data.get("previous_worker_id") is not None
-                else None
-            ),
+            previous_worker_id=previous_worker_id,
             enqueued_at=float(data.get("enqueued_at", 0.0)),
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class WorkerEndpoint:
     host: str
     port: int
@@ -83,20 +81,20 @@ class WorkerEndpoint:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "WorkerEndpoint":
+    def from_dict(cls, data: dict[str, Any]) -> "WorkerEndpoint":
         return cls(host=str(data["host"]), port=int(data["port"]))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class RegisterPayload:
     worker_id: str
     p2p_endpoint: WorkerEndpoint
-    queue_capacity: int = 10
+    queue_capacity: int = DEFAULT_QUEUE_CAPACITY
 
     def __post_init__(self) -> None:
         if not self.worker_id:
             raise ValueError("worker_id is required")
-        if self.queue_capacity != 10:
+        if self.queue_capacity != DEFAULT_QUEUE_CAPACITY:
             raise ValueError("the assignment requires queue_capacity=10")
 
     def to_dict(self) -> dict[str, Any]:
@@ -107,28 +105,28 @@ class RegisterPayload:
         }
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "RegisterPayload":
+    def from_dict(cls, data: dict[str, Any]) -> "RegisterPayload":
         endpoint = data.get("p2p_endpoint")
-        if not isinstance(endpoint, Mapping):
+        if not isinstance(endpoint, dict):
             raise ValueError("p2p_endpoint must be an object")
         return cls(
             worker_id=str(data["worker_id"]),
             p2p_endpoint=WorkerEndpoint.from_dict(endpoint),
-            queue_capacity=int(data.get("queue_capacity", 10)),
+            queue_capacity=int(data.get("queue_capacity", DEFAULT_QUEUE_CAPACITY)),
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class WorkerStatus:
     worker_id: str
     queue_size: int
-    queue_capacity: int = 10
+    queue_capacity: int = DEFAULT_QUEUE_CAPACITY
     processing_task_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.worker_id:
             raise ValueError("worker_id is required")
-        if self.queue_capacity != 10:
+        if self.queue_capacity != DEFAULT_QUEUE_CAPACITY:
             raise ValueError("the assignment requires queue_capacity=10")
         if not 0 <= self.queue_size <= self.queue_capacity:
             raise ValueError("queue_size must fit within queue_capacity")
@@ -145,20 +143,20 @@ class WorkerStatus:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "WorkerStatus":
+    def from_dict(cls, data: dict[str, Any]) -> "WorkerStatus":
+        processing_task_id = data.get("processing_task_id")
+        if processing_task_id is not None:
+            processing_task_id = str(processing_task_id)
+
         return cls(
             worker_id=str(data["worker_id"]),
             queue_size=int(data["queue_size"]),
-            queue_capacity=int(data.get("queue_capacity", 10)),
-            processing_task_id=(
-                str(data["processing_task_id"])
-                if data.get("processing_task_id") is not None
-                else None
-            ),
+            queue_capacity=int(data.get("queue_capacity", DEFAULT_QUEUE_CAPACITY)),
+            processing_task_id=processing_task_id,
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass
 class Message:
     message_type: MessageType
     sender_id: str
@@ -190,9 +188,9 @@ class Message:
         }
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "Message":
+    def from_dict(cls, data: dict[str, Any]) -> "Message":
         payload = data.get("payload", {})
-        if not isinstance(payload, Mapping):
+        if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
         return cls(
             version=int(data.get("version", PROTOCOL_VERSION)),

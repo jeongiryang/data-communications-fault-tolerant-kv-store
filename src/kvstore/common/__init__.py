@@ -1,5 +1,3 @@
-"""Shared models, protocol helpers, configuration, and logical clock."""
-
 from .clock import LogicalClock
 from .models import (
     Message,
