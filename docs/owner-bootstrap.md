@@ -17,24 +17,37 @@
 
 ## 권장 네트워크 토폴로지
 
-최종 시연은 네 Worker가 같은 LAN에서 서로의 사설 IP에 접속하도록 구성한다.
+최종 시연의 기본 구성은 **한 로컬 PC에서 네 Worker를 각각 독립 Thread로 실행**하는
+것이다. 각 Worker Thread는 Master에 별도 TCP 연결을 열고, P2P 통신을 위해 서로 다른
+loopback 포트에서 TCP server를 연다.
 
 ```text
 AWS EC2 Master (public IP:5000)
-          ^
-          | outbound TCP from Workers
+          ^ four independent TCP connections
           |
-same LAN: Worker1:6001 <-> Worker2:6002 <-> Worker3:6003 <-> Worker4:6004
++---------+ Local Worker PC ----------------------------------+
+| Worker1 Thread : 127.0.0.1:6001                             |
+| Worker2 Thread : 127.0.0.1:6002                             |
+| Worker3 Thread : 127.0.0.1:6003                             |
+| Worker4 Thread : 127.0.0.1:6004                             |
+| P2P transfers use real TCP sockets between loopback ports   |
++-------------------------------------------------------------+
 ```
 
-이 방식은 가정용 공유기 NAT를 넘어 Worker가 서로 접속해야 하는 문제를 피한다.
-서로 다른 외부 네트워크에서 개발할 때는 localhost 테스트를 사용한다. VPN overlay를
-사용하려면 과제에서 허용되는지 교수자에게 먼저 확인한다.
+이 구성은 네 Worker가 독립 Thread이고 Worker↔Worker 통신이 TCP라는 필수 조건을
+그대로 만족하면서 VPN, 공유기 포트 포워딩, 서로 다른 공인 IP를 요구하지 않는다.
+Master에서는 같은 공인 IP에서 들어오는 네 연결을 Worker ID로 구분한다.
+
+팀원 PC 여러 대를 사용하고 싶다면 모두 같은 LAN에 연결하고 각 Worker가 자신의
+사설 IP와 고유 포트를 광고하는 방식도 가능하다. 이때만 로컬 방화벽에서 P2P 포트를
+허용한다. 서로 다른 외부 네트워크를 연결하는 VPN 구성은 사용하지 않는다.
 
 ## 담당자별 시작 조건
 
 ### Worker runtime 담당
 
+- 하나의 launcher가 `WorkerNode` 네 개를 각각 독립 Thread로 시작할 수 있게 한다.
+- Worker마다 ID와 P2P 포트 6001~6004를 별도로 주입한다.
 - `Task`, `Message`, `RegisterPayload`, `WorkerStatus`를 재정의하지 않는다.
 - `send_message`와 `receive_message`로 Master 통신을 구현한다.
 - Queue 구현이 P2P 담당자에게 안전한 조회·예약·ACK 후 제거 인터페이스를 제공한다.
@@ -49,6 +62,7 @@ same LAN: Worker1:6001 <-> Worker2:6002 <-> Worker3:6003 <-> Worker4:6004
 ### Master·통합 담당
 
 - registration stub을 실제 Master 서버로 점진적으로 교체한다.
+- 같은 원격 IP에서 접속하더라도 Worker ID가 서로 다른 네 등록을 허용한다.
 - Worker 4개가 모두 등록된 뒤 분배를 시작한다.
 - 실패 작업은 Task ID 기준 Priority Queue에서 추적하고 직전 실패 Worker를 제외한다.
 - AWS 배포 전에 localhost Worker 4개로 전체 흐름을 먼저 통과시킨다.
