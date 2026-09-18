@@ -114,17 +114,19 @@ class ReadyQueue:
                         return task
             return None
 
-    def confirm_removed(self, task_id: str) -> None:
+    def confirm_removed(self, task_id: str) -> QueueChangeResult:
         with self._lock:
             self._reserved.pop(task_id, None)
+            return self._result_locked(accepted=True)
 
-    def release_reservation(self, task_id: str) -> None:
+    def release_reservation(self, task_id: str) -> QueueChangeResult:
         # 거절/timeout/연결 오류 시 예약을 풀고 원래 큐로 되돌린다.
         with self._lock:
             task = self._reserved.pop(task_id, None)
             if task is not None:
                 self._normal.appendleft(task)
                 self._not_empty.notify()
+            return self._result_locked(accepted=task is not None)
 
     def wake_all(self) -> None:
         with self._not_empty:

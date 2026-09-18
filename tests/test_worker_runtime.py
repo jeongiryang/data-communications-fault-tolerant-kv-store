@@ -34,6 +34,22 @@ def _terminate_message() -> Message:
     )
 
 
+def _drain_trailing_messages_and_terminate(conn, received: list[Message]) -> None:
+    """RESULT 직후 워커가 곧이어 보낼 수 있는 QUEUE_STATUS 등을 마저 읽고 나서 TERMINATE를
+    보낸다. 안 읽은 데이터가 남은 채로 소켓을 닫으면 OS가 FIN 대신 RST를 보낼 수 있고,
+    그러면 방금 보낸 TERMINATE까지 유실될 수 있어서 필요한 절차다."""
+    conn.settimeout(0.3)
+    try:
+        while True:
+            trailing = receive_message(conn)
+            received.append(trailing)
+    except OSError:
+        pass
+    finally:
+        conn.settimeout(5.0)
+    send_message(conn, _terminate_message())
+
+
 def _task_message(task_id: str, key: str = "a3f7", value: int = 42) -> Message:
     return Message(
         message_type=MessageType.TASK,
@@ -114,7 +130,7 @@ class WorkerRuntimeTests(unittest.TestCase):
                 received.append(message)
                 if message.message_type in (MessageType.RESULT_SUCCESS, MessageType.RESULT_FAIL):
                     break
-            send_message(conn, _terminate_message())
+            _drain_trailing_messages_and_terminate(conn, received)
 
         self._run_worker(script, rng=_ScriptedRandom(uniform_value=2.0, random_value=0.1))
 
@@ -133,7 +149,7 @@ class WorkerRuntimeTests(unittest.TestCase):
                 received.append(message)
                 if message.message_type in (MessageType.RESULT_SUCCESS, MessageType.RESULT_FAIL):
                     break
-            send_message(conn, _terminate_message())
+            _drain_trailing_messages_and_terminate(conn, received)
 
         self._run_worker(script, rng=_ScriptedRandom(uniform_value=1.5, random_value=0.95))
 
@@ -154,7 +170,7 @@ class WorkerRuntimeTests(unittest.TestCase):
                     results[worker_key].append(message)
                     if message.message_type == MessageType.RESULT_SUCCESS:
                         break
-                send_message(conn, _terminate_message())
+                _drain_trailing_messages_and_terminate(conn, results[worker_key])
 
             return script
 

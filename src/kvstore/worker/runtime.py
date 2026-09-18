@@ -25,7 +25,7 @@ from kvstore.common.models import (
     WorkerEndpoint,
 )
 from kvstore.common.protocol import ProtocolError, receive_message, send_message
-from kvstore.worker.ready_queue import ReadyQueue
+from kvstore.worker.ready_queue import WARN_THRESHOLD_RATIO, ReadyQueue
 
 MIN_PROCESSING_SECONDS = 1.0
 MAX_PROCESSING_SECONDS = 3.0
@@ -174,6 +174,17 @@ class WorkerRuntime:
             task = self.queue.dequeue_for_processing(timeout=POLL_TIMEOUT_SECONDS)
             if task is None:
                 continue
+
+            # 작업이 Ready Queue를 "나가는" 시점. 여전히 70% 초과 상태면 WARN을 남긴다
+            # (과제 스펙: 70% 초과 상태에서 들고날 때마다 매번 기록).
+            status = self.queue.snapshot_status(self.config.worker_id)
+            if status.queue_size > status.queue_capacity * WARN_THRESHOLD_RATIO:
+                self._emit(
+                    "QUEUE",
+                    "WARN",
+                    f"Queue still above warn threshold after dequeue: "
+                    f"{status.queue_size}/{status.queue_capacity}.",
+                )
 
             self._emit("PROC", "INFO", f"Processing KV[{task.task_id}]...")
             processing_seconds = self._rng.uniform(MIN_PROCESSING_SECONDS, MAX_PROCESSING_SECONDS)

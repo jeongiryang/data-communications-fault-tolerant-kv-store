@@ -65,6 +65,16 @@ class ReadyQueueTests(unittest.TestCase):
 
         self.assertEqual(queue.snapshot_status("worker1").queue_size, 0)
 
+    def test_warn_still_true_after_dequeue_when_still_above_threshold(self):
+        queue = ReadyQueue(capacity=10)
+        for index in range(9):
+            queue.try_enqueue(_make_task(f"task-{index}"))
+
+        queue.dequeue_for_processing(timeout=0)  # 9 -> 8, 여전히 70% 초과여야 한다
+
+        status = queue.snapshot_status("worker1")
+        self.assertGreater(status.queue_size, status.queue_capacity * 0.7)
+
     def test_transfer_release_restores_task_to_queue(self):
         queue = ReadyQueue(capacity=10)
         queue.try_enqueue(_make_task("task-1"))
