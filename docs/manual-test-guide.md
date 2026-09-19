@@ -53,7 +53,7 @@ Worker ID와 연결 수가 겹칠 수 있으므로 한 명만 실행한다.
 
 <a id="master-role"></a>
 
-### Master 노드 담당자가 읽을 부분
+### Master 노드 담당자가 읽을 부분(정이량)
 
 Master 노드 담당자는 다음 절만 순서대로 읽으면 된다.
 
@@ -68,7 +68,7 @@ Master를 실행한 뒤에는 현재 EC2 퍼블릭 IPv4 주소를 Worker 담당�
 
 <a id="worker-role"></a>
 
-### Worker 노드 담당자가 읽을 부분
+### Worker 노드 담당자가 읽을 부분(최길웅, 배준희)
 
 Worker 노드 담당자는 다음 절만 순서대로 읽으면 된다.
 
