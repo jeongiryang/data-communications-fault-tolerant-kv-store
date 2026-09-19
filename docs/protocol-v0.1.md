@@ -82,8 +82,9 @@ TCP는 메시지 경계를 보존하지 않으므로 `recv()` 한 번을 메시�
 4. 송신 Worker는 ACK에 포함된 Task만 제거한다.
 5. timeout, 연결 오류, 거절, ACK 누락 시 예약을 해제하고 원래 Queue에 보존한다.
 
-논리 통신 지연 1초는 protocol 함수가 자동 증가시키지 않는다. 실제 상태 변경이
-확정되는 호출 지점에서 공통 `LogicalClock`을 정확히 한 번 증가시킨다. 메시지 수신
-노드는 먼저 `clock.observe(message.logical_clock)`으로 원격 시각을 반영한다. 최종
-Master는 전체 시뮬레이션 시각의 권위자이며, Worker의 처리시간을 담은 결과 메시지를
-관측해 절대 뒤로 가지 않는 시각을 유지한다.
+논리 통신 지연 1초는 송신자가 메시지를 만들기 직전에 공통 `LogicalClock`에 정확히
+한 번 반영한다. 수신자는 통신 지연을 다시 더하지 않고
+`clock.observe(message.logical_clock)`으로 원격 시각만 반영한다. REGISTER, TASK,
+QUEUE_STATUS, 결과, ACK, P2P 메시지에 모두 같은 규칙을 적용한다. 최종 Master는 전체
+시뮬레이션 시각의 권위자이며 Worker가 보낸 논리 시각을 관측해 시간이 뒤로 가지 않게
+유지한다.
