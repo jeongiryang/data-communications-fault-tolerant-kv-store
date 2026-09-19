@@ -4,6 +4,29 @@
 따라 할 수 있게 작성한 절차서다. 기본 구성은 AWS EC2에서 Master 1개를 실행하고,
 한 대의 Windows PC에서 Worker 4개를 각각 독립 Thread로 실행하는 방식이다.
 
+## 0. 먼저 역할과 실행 순서 확인하기
+
+한 번의 테스트에서는 **오너 한 명이 AWS Master를 실행하고, 팀원 한 명이 자신의
+PC에서 Worker 4개를 모두 실행**한다. 여러 팀원이 동시에 Worker launcher를 실행하면
+Worker ID와 연결 수가 겹칠 수 있으므로 한 명만 실행한다.
+
+| 담당 | 진행할 절 | 할 일 |
+| --- | --- | --- |
+| 오너 | 2~5절, 9절 | EC2 시작, 현재 공인 IP 전달, Master 실행, 종료 후 EC2 중지 |
+| Worker 실행 팀원 | 1절, 6~8절 | Python·Git 확인, 로컬 코드 준비, Worker 4개 실행, 로그 확인 |
+
+실행 순서는 다음과 같다.
+
+1. 팀원이 1절과 6절을 진행해 로컬 실행 환경을 준비한다.
+2. 오너가 2~5절을 진행하고 Master에 `Listening on 0.0.0.0:5000`이 표시됐는지 확인한다.
+3. 오너가 현재 EC2 퍼블릭 IPv4 주소와 함께 “Master 준비 완료”라고 팀원에게 알린다.
+4. 팀원이 7절 명령의 `<AWS-IP>`를 전달받은 주소로 바꾸고 Worker를 실행한다.
+5. 오너와 팀원이 각각 8절의 성공 기준을 확인한다.
+6. 오너가 9절에 따라 EC2를 중지한다.
+
+팀원은 AWS 계정에 로그인하거나 EC2를 직접 조작할 필요가 없다. 오너가 전달할 정보는
+현재 EC2 퍼블릭 IPv4 주소 하나다.
+
 ## 1. 테스트 전에 준비할 것
 
 - AWS 계정 로그인 정보
@@ -87,11 +110,11 @@ Master 로그를 저장할 폴더를 만들고 실제 Master를 실행한다.
 
 ```bash
 cd /opt/kvstore
-mkdir -p ~/kvstore-manual-test-logs
+mkdir -p /home/ubuntu/kvstore-manual-test-logs
 .venv/bin/python -m kvstore.master.runtime \
   --host 0.0.0.0 \
   --port 5000 \
-  --log-dir ~/kvstore-manual-test-logs
+  --log-dir /home/ubuntu/kvstore-manual-test-logs
 ```
 
 Master는 Worker 4개가 연결될 때까지 기다린다. 이 터미널 탭은 닫지 않는다.
@@ -177,6 +200,11 @@ TCP 주소를 사용한다.
 
 ## 8. 테스트 성공 여부 확인하기
 
+긴 로그를 처음부터 읽을 필요는 없다. 오너와 Worker 실행 팀원이 아래의 짧은 확인
+명령만 각각 실행하면 된다.
+
+### 오너가 AWS에서 확인할 것
+
 모든 작업이 끝나면 AWS Master 터미널에 다음 내용이 출력되어야 한다.
 
 ```text
@@ -190,12 +218,41 @@ P2P와 장애 복구가 실제로 발생했는지도 Master 통계에서 확인�
 - `Total Fault-Tolerance Reallocations`가 0보다 큰가
 - Worker별 Success 합계가 5,000인가
 
+Master 로그에서 필수 결과만 다시 출력하려면 AWS 터미널에서 다음 명령을 실행한다.
+
+```bash
+grep -E "Total Completed Tasks|Total Success|Total P2P|Total Fault|TERMINATE" /home/ubuntu/kvstore-manual-test-logs/Master.txt
+```
+
+다음 조건을 모두 만족하면 Master 실행은 성공이다.
+
+- `Total Completed Tasks: 5000 / 5000`
+- `Total Success: 5000`
+- P2P 이벤트와 장애 재할당이 0보다 큼
+- 마지막에 `TERMINATE | SUCCESS | Stored 5000 tasks.`가 있음
+
+### Worker 실행 팀원이 Windows에서 확인할 것
+
 로컬 PowerShell에서 Worker 로그 파일을 확인한다.
 
 ```powershell
 Get-ChildItem .\manual-test-logs\Worker*.txt
 Get-Content .\manual-test-logs\Worker1.txt -Tail 10
-Select-String -Path .\manual-test-logs\Worker*.txt -Pattern "TERMINATE \| SUCCESS"
+Select-String -Path .\manual-test-logs\Worker*.txt -SimpleMatch "TERMINATE | SUCCESS"
+```
+
+정상이라면 Worker1~Worker4에 대해 총 네 줄이 출력된다. 명령어 화면이 불편하면
+다음 명령으로 로그 폴더를 Windows 파일 탐색기에서 열 수 있다.
+
+```powershell
+explorer .\manual-test-logs
+```
+
+각 `WorkerN.txt`를 메모장으로 열고 맨 아래에 다음 두 줄이 있는지만 확인해도 된다.
+
+```text
+STAT | INFO | Throughput=...
+TERMINATE | SUCCESS | workerN gracefully disconnected.
 ```
 
 다음 네 파일이 모두 있어야 한다.
@@ -210,9 +267,13 @@ manual-test-logs\Worker4.txt
 AWS Master 로그는 다음 명령으로 확인한다.
 
 ```bash
-ls -lh ~/kvstore-manual-test-logs/Master.txt
-tail -n 30 ~/kvstore-manual-test-logs/Master.txt
+ls -lh /home/ubuntu/kvstore-manual-test-logs/Master.txt
+tail -n 30 /home/ubuntu/kvstore-manual-test-logs/Master.txt
 ```
+
+Master 로그 경로를 찾지 못하면 실행 명령에서 `--log-dir` 뒤에
+`/home/ubuntu/kvstore-manual-test-logs`를 정확히 입력했는지 확인한다. `~` 또는 `\~`를
+직접 입력하지 않는다.
 
 ## 9. 테스트가 끝난 뒤 EC2 중지하기
 
