@@ -65,6 +65,7 @@ TCP는 메시지 경계를 보존하지 않으므로 `recv()` 한 번을 메시�
     "value": 42,
     "attempt": 0,
     "previous_worker_id": null,
+    "assignment_worker_id": "worker1",
     "enqueued_at": 0.0
   },
   "priority": false
@@ -73,6 +74,8 @@ TCP는 메시지 경계를 보존하지 않으므로 `recv()` 한 번을 메시�
 
 재할당 때 `attempt`를 증가시키고 `previous_worker_id`를 기록한다. Master는 바로
 직전에 실패한 Worker를 우선 제외한다.
+`assignment_worker_id`는 Master가 현재 배정한 Worker다. P2P로 작업을 받은 Worker는
+이 값을 결과에 함께 보내서 Master가 현재 배정 건의 결과인지 확인할 수 있게 한다.
 
 ## P2P 안전 규칙
 

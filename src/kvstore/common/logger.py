@@ -1,4 +1,4 @@
-"""배준희 담당: 과제 공통 규격 로거 모듈.
+"""Master와 Worker가 함께 사용하는 파일 로거.
 
 과제 요구사항:
 - 형식: [clock] NODE | EVENT | STATUS | message
@@ -8,7 +8,6 @@
 """
 from __future__ import annotations
 
-import os
 import threading
 from pathlib import Path
 
@@ -62,7 +61,7 @@ class NodeLogger:
         return line
 
     def __call__(self, clock: float, node: str, event: str, status: str, message: str) -> None:
-        """최길웅 조원의 runtime.py 등에서 함수 형태로 주입받아 쓸 수 있도록 지원한다."""
+        """Runtime에서 사용하는 로그 함수 형태를 지원한다."""
         target_node = node or self.node_name
         line = format_log_line(clock, target_node, event, status, message)
         with self._lock:

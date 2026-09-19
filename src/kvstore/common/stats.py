@@ -1,4 +1,4 @@
-"""배준희 담당: 과제 6대 성능 평가 지표 및 통계 수집 모듈.
+"""과제의 필수 성능 지표를 Thread-safe하게 수집한다.
 
 과제 필수 지표:
 1. Worker별 작업 처리량 (성공 처리 건수)
@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -63,30 +63,49 @@ class StatsCollector:
         self._total_reallocations: int = 0  # 실패로 인한 재할당 횟수
         self._total_p2p_events: int = 0  # 전체 P2P 이전 성공 횟수
         self._total_p2p_tasks: int = 0  # P2P로 이전된 총 작업 개수
+        self._seen_event_ids: set[str] = set()
+
+    def _is_duplicate_locked(self, event_id: str | None) -> bool:
+        if event_id is None:
+            return False
+        if event_id in self._seen_event_ids:
+            return True
+        self._seen_event_ids.add(event_id)
+        return False
 
     def _get_or_create_worker_locked(self, worker_id: str) -> WorkerStats:
         if worker_id not in self._workers:
             self._workers[worker_id] = WorkerStats(worker_id=worker_id)
         return self._workers[worker_id]
 
-    def record_task_success(self, worker_id: str, wait_seconds: float) -> None:
+    def record_task_success(
+        self, worker_id: str, wait_seconds: float, event_id: str | None = None
+    ) -> bool:
         """작업이 80% 성공 처리되었을 때 기록한다."""
         with self._lock:
+            if self._is_duplicate_locked(event_id):
+                return False
             stats = self._get_or_create_worker_locked(worker_id)
             stats.throughput += 1
             stats.success_count += 1
             stats.processed_count += 1
             if wait_seconds > 0:
                 stats.total_wait_seconds += float(wait_seconds)
+            return True
 
-    def record_task_fail(self, worker_id: str, wait_seconds: float, reason: str = "20% rule") -> None:
+    def record_task_fail(
+        self, worker_id: str, wait_seconds: float, event_id: str | None = None
+    ) -> bool:
         """작업이 20% 규칙 또는 기타 사유로 실패했을 때 기록한다."""
         with self._lock:
+            if self._is_duplicate_locked(event_id):
+                return False
             stats = self._get_or_create_worker_locked(worker_id)
             stats.fail_count += 1
             stats.processed_count += 1
             if wait_seconds > 0:
                 stats.total_wait_seconds += float(wait_seconds)
+            return True
 
     def record_queue_overflow(self, worker_id: str) -> None:
         """큐가 10개로 가득 차서 인입이 거절되었을 때 기록한다."""
@@ -95,12 +114,18 @@ class StatsCollector:
             stats.overflow_count += 1
 
     def record_p2p_transfer(
-        self, sender_id: str, receiver_id: str, task_count: int
-    ) -> None:
+        self,
+        sender_id: str,
+        receiver_id: str,
+        task_count: int,
+        event_id: str | None = None,
+    ) -> bool:
         """P2P 이전이 성공적으로 확정(ACK 수신)되었을 때 기록한다."""
         if task_count <= 0:
-            return
+            return False
         with self._lock:
+            if self._is_duplicate_locked(event_id):
+                return False
             sender = self._get_or_create_worker_locked(sender_id)
             receiver = self._get_or_create_worker_locked(receiver_id)
 
@@ -112,11 +137,41 @@ class StatsCollector:
 
             self._total_p2p_events += 1
             self._total_p2p_tasks += task_count
+            return True
 
-    def record_reallocation(self) -> None:
+    def record_reallocation(self, event_id: str | None = None) -> bool:
         """실패한 작업이 다른 Worker에 재할당되었을 때 기록한다."""
         with self._lock:
+            if self._is_duplicate_locked(event_id):
+                return False
             self._total_reallocations += 1
+            return True
+
+    def update_p2p_snapshot(
+        self,
+        worker_id: str,
+        *,
+        sent_events: int,
+        sent_tasks: int,
+        received_events: int,
+        received_tasks: int,
+    ) -> None:
+        """Worker가 보낸 누적값으로 P2P 통계를 갱신한다."""
+        values = (sent_events, sent_tasks, received_events, received_tasks)
+        if any(value < 0 for value in values):
+            raise ValueError("P2P statistics cannot be negative")
+        with self._lock:
+            stats = self._get_or_create_worker_locked(worker_id)
+            stats.p2p_transfers_sent = max(stats.p2p_transfers_sent, sent_events)
+            stats.p2p_tasks_sent = max(stats.p2p_tasks_sent, sent_tasks)
+            stats.p2p_transfers_received = max(stats.p2p_transfers_received, received_events)
+            stats.p2p_tasks_received = max(stats.p2p_tasks_received, received_tasks)
+            self._total_p2p_events = sum(
+                worker.p2p_transfers_sent for worker in self._workers.values()
+            )
+            self._total_p2p_tasks = sum(
+                worker.p2p_tasks_sent for worker in self._workers.values()
+            )
 
     def get_worker_stats(self, worker_id: str) -> WorkerStats:
         """특정 Worker의 통계 스냅샷을 반환한다."""

@@ -50,6 +50,17 @@ class StatsTests(unittest.TestCase):
         summary = collector.summary(total_simulation_seconds=100.0)
         self.assertEqual(summary["total_reallocations"], 2)
 
+    def test_duplicate_event_id_is_not_counted_twice(self) -> None:
+        collector = StatsCollector()
+        collector.record_task_success("worker-1", 1.0, event_id="result-1")
+        collector.record_task_success("worker-1", 1.0, event_id="result-1")
+        collector.record_reallocation(event_id="retry-1")
+        collector.record_reallocation(event_id="retry-1")
+
+        summary = collector.summary(total_simulation_seconds=1.0)
+        self.assertEqual(summary["total_success_count"], 1)
+        self.assertEqual(summary["total_reallocations"], 1)
+
     def test_concurrent_multithread_updates_are_thread_safe(self) -> None:
         collector = StatsCollector()
 

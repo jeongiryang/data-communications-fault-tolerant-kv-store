@@ -19,6 +19,8 @@ from kvstore.common.models import (
     WorkerEndpoint,
 )
 from kvstore.common.protocol import ProtocolError, receive_message, send_message
+from kvstore.common.stats import StatsCollector
+from kvstore.worker.p2p import P2PService
 from kvstore.worker.ready_queue import WARN_THRESHOLD_RATIO, ReadyQueue
 
 MIN_PROCESSING_SECONDS = 1.0
@@ -40,6 +42,8 @@ class WorkerRuntime:
         clock: LogicalClock | None = None,
         log=_default_log,
         rng: random.Random | None = None,
+        peers: dict[str, WorkerEndpoint] | None = None,
+        stats: StatsCollector | None = None,
     ) -> None:
         self.config = config
         self.queue = queue if queue is not None else ReadyQueue(capacity=DEFAULT_QUEUE_CAPACITY)
@@ -48,34 +52,53 @@ class WorkerRuntime:
         # 테스트에서 성공/실패를 강제로 재현할 수 있도록 주입 가능하게 둔다.
         # 실제 실행 시에는 매번 새 random.Random()이 생성되어 무작위성이 유지된다.
         self._rng = rng or random.Random()
-        self._node_name = config.worker_id.upper()
+        self.stats = stats if stats is not None else StatsCollector()
+        self._node_name = config.worker_id.capitalize()
         self._socket: socket.socket | None = None
         # 수신 Thread와 처리 Thread가 같은 TCP 연결로 메시지를 보낸다.
         self._send_lock = threading.Lock()
         self._shutdown = threading.Event()
         self._terminated_by_master = False
+        self._p2p = P2PService(
+            worker_id=config.worker_id,
+            endpoint=WorkerEndpoint(host=config.p2p_host, port=config.p2p_port),
+            peers=peers or {},
+            queue=self.queue,
+            clock=self.clock,
+            log=log,
+            stats=self.stats,
+            rng=self._rng,
+            queue_changed=self._send_queue_status,
+        )
 
     def run(self) -> None:
-        self._socket = self._connect_and_register()
-        if self._shutdown.is_set():
-            self._socket.close()
-            return
-        receiver = threading.Thread(
-            target=self._receive_loop, name=f"{self.config.worker_id}-recv", daemon=True
-        )
-        processor = threading.Thread(
-            target=self._process_loop, name=f"{self.config.worker_id}-proc", daemon=True
-        )
-        receiver.start()
-        processor.start()
+        self._p2p.start()
+        try:
+            self._socket = self._connect_and_register()
+            if self._shutdown.is_set():
+                self._socket.close()
+                return
+            receiver = threading.Thread(
+                target=self._receive_loop, name=f"{self.config.worker_id}-recv", daemon=True
+            )
+            processor = threading.Thread(
+                target=self._process_loop, name=f"{self.config.worker_id}-proc", daemon=True
+            )
+            receiver.start()
+            processor.start()
 
-        receiver.join()
-        self._shutdown.set()
-        self.queue.wake_all()
-        processor.join()
+            receiver.join()
+            self._shutdown.set()
+            self.queue.wake_all()
+            processor.join()
+        finally:
+            self._shutdown.set()
+            self.queue.wake_all()
+            self._p2p.stop()
+            if self._socket is not None:
+                self._socket.close()
 
-        if self._socket is not None:
-            self._socket.close()
+        self._emit_final_stats()
         if self._terminated_by_master:
             self._emit("TERMINATE", "SUCCESS", f"{self.config.worker_id} gracefully disconnected.")
         else:
@@ -84,6 +107,7 @@ class WorkerRuntime:
     def stop(self) -> None:
         self._shutdown.set()
         self.queue.wake_all()
+        self._p2p.stop()
         if self._socket is not None:
             try:
                 self._socket.shutdown(socket.SHUT_RDWR)
@@ -161,6 +185,7 @@ class WorkerRuntime:
             self._emit("RECV", "FAIL", f"Invalid task payload rejected: {exc}")
             return
 
+        task.enqueued_at = self.clock.read()
         result = self.queue.try_enqueue(task, priority=priority)
         if not result.accepted:
             if result.reason == "duplicate":
@@ -173,6 +198,7 @@ class WorkerRuntime:
                 f"Queue full ({result.queue_size}/{result.queue_capacity}). "
                 f"New task request rejected.",
             )
+            self.stats.record_queue_overflow(self.config.worker_id)
             self._send_result_fail(task, reason="queue overflow")
             return
 
@@ -185,6 +211,8 @@ class WorkerRuntime:
             self._emit(
                 "QUEUE", "WARN", f"Queue nearing full: {result.queue_size}/{result.queue_capacity}."
             )
+            if result.queue_size * 2 > 15:
+                self._p2p.request_check()
         self._send_queue_status()
 
     def _process_loop(self) -> None:
@@ -192,6 +220,7 @@ class WorkerRuntime:
             task = self.queue.dequeue_for_processing(timeout=QUEUE_WAIT_SECONDS)
             if task is None:
                 continue
+            wait_seconds = max(0.0, self.clock.read() - task.enqueued_at)
 
             # 작업이 Ready Queue를 "나가는" 시점. 여전히 70% 초과 상태면 WARN을 남긴다
             # (과제 스펙: 70% 초과 상태에서 들고날 때마다 매번 기록).
@@ -219,10 +248,23 @@ class WorkerRuntime:
 
             try:
                 if succeeded:
-                    self._send_result_success(task, processing_seconds)
+                    self._send_result_success(task, processing_seconds, wait_seconds)
+                    self.stats.record_task_success(
+                        self.config.worker_id,
+                        wait_seconds,
+                        event_id=f"success:{task.task_id}",
+                    )
                 else:
                     self._send_result_fail(
-                        task, reason="20% rule", processing_seconds=processing_seconds
+                        task,
+                        reason="20% rule",
+                        processing_seconds=processing_seconds,
+                        wait_seconds=wait_seconds,
+                    )
+                    self.stats.record_task_fail(
+                        self.config.worker_id,
+                        wait_seconds,
+                        event_id=f"fail:{task.task_id}:{task.attempt}",
                     )
                 self.queue.mark_processing_done()
                 self._send_queue_status()
@@ -244,7 +286,9 @@ class WorkerRuntime:
             )
             send_message(self._socket, message)
 
-    def _send_result_success(self, task: Task, processing_seconds: float) -> None:
+    def _send_result_success(
+        self, task: Task, processing_seconds: float, wait_seconds: float = 0.0
+    ) -> None:
         self._send(
             MessageType.RESULT_SUCCESS,
             {
@@ -252,6 +296,8 @@ class WorkerRuntime:
                 "key": task.key,
                 "value": task.value,
                 "worker_id": self.config.worker_id,
+                "assignment_worker_id": task.assignment_worker_id or self.config.worker_id,
+                "wait_seconds": wait_seconds,
             },
         )
         self._emit(
@@ -259,18 +305,49 @@ class WorkerRuntime:
         )
 
     def _send_result_fail(
-        self, task: Task, *, reason: str, processing_seconds: float | None = None
+        self,
+        task: Task,
+        *,
+        reason: str,
+        processing_seconds: float | None = None,
+        wait_seconds: float = 0.0,
     ) -> None:
         self._send(
             MessageType.RESULT_FAIL,
-            {"task_id": task.task_id, "worker_id": self.config.worker_id, "reason": reason},
+            {
+                "task_id": task.task_id,
+                "worker_id": self.config.worker_id,
+                "assignment_worker_id": task.assignment_worker_id or self.config.worker_id,
+                "reason": reason,
+                "wait_seconds": wait_seconds,
+            },
         )
         suffix = f" time={processing_seconds:.2f}s." if processing_seconds is not None else ""
         self._emit("PROC", "FAIL", f"KV[{task.task_id}] FAILED ({reason}).{suffix}")
 
     def _send_queue_status(self) -> None:
+        if self._socket is None or self._shutdown.is_set():
+            return
         status = self.queue.snapshot_status(self.config.worker_id)
-        self._send(MessageType.QUEUE_STATUS, status.to_dict())
+        worker_stats = self.stats.get_worker_stats(self.config.worker_id)
+        payload = status.to_dict()
+        payload["p2p_statistics"] = {
+            "sent_events": worker_stats.p2p_transfers_sent,
+            "sent_tasks": worker_stats.p2p_tasks_sent,
+            "received_events": worker_stats.p2p_transfers_received,
+            "received_tasks": worker_stats.p2p_tasks_received,
+        }
+        self._send(MessageType.QUEUE_STATUS, payload)
+
+    def _emit_final_stats(self) -> None:
+        worker = self.stats.get_worker_stats(self.config.worker_id)
+        self._emit(
+            "STAT",
+            "INFO",
+            f"Throughput={worker.throughput}, Success={worker.success_count}, "
+            f"Fail={worker.fail_count}, AvgWait={worker.average_wait_seconds:.2f}s, "
+            f"P2P sent={worker.p2p_transfers_sent}, received={worker.p2p_transfers_received}.",
+        )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

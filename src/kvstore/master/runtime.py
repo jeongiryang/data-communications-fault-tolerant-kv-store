@@ -6,6 +6,7 @@ import threading
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from kvstore.common.clock import LogicalClock
 from kvstore.common.config import (
@@ -15,7 +16,9 @@ from kvstore.common.config import (
     DEFAULT_SOCKET_TIMEOUT_SECONDS,
 )
 from kvstore.common.models import Message, MessageType, RegisterPayload, Task, WorkerStatus
+from kvstore.common.logger import NodeLogger
 from kvstore.common.protocol import ProtocolError, receive_message, send_message
+from kvstore.common.stats import StatsCollector
 
 
 TASK_COUNT = 5000
@@ -61,6 +64,7 @@ class MasterRuntime:
         clock: LogicalClock | None = None,
         rng: random.Random | None = None,
         log=_default_log,
+        stats: StatsCollector | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -68,6 +72,7 @@ class MasterRuntime:
         self.clock = clock if clock is not None else LogicalClock()
         self._rng = rng if rng is not None else random.Random()
         self._log = log
+        self.stats = stats if stats is not None else StatsCollector()
         self._condition = threading.Condition()
         self._workers: dict[str, WorkerConnection] = {}
         self._tasks: dict[str, Task] = {}
@@ -102,6 +107,7 @@ class MasterRuntime:
             self._accept_workers()
             self._start_receivers()
             self._distribute_tasks()
+            self._emit_statistics()
             self._send_terminate()
         finally:
             self.stop()
@@ -254,31 +260,67 @@ class MasterRuntime:
             with self._condition:
                 worker.status = status
                 self._condition.notify_all()
+            p2p = message.payload.get("p2p_statistics")
+            if isinstance(p2p, dict):
+                self.stats.update_p2p_snapshot(
+                    worker.worker_id,
+                    sent_events=int(p2p.get("sent_events", 0)),
+                    sent_tasks=int(p2p.get("sent_tasks", 0)),
+                    received_events=int(p2p.get("received_events", 0)),
+                    received_tasks=int(p2p.get("received_tasks", 0)),
+                )
         elif message.message_type is MessageType.RESULT_SUCCESS:
-            self._handle_success(worker, message.payload)
+            self._handle_success(worker, message)
         elif message.message_type is MessageType.RESULT_FAIL:
-            self._handle_failure(worker, message.payload)
+            self._handle_failure(worker, message)
         else:
             self._emit("RECV", "WARN", f"Unhandled message type: {message.message_type.value}.")
 
-    def _handle_success(self, worker: WorkerConnection, payload: dict) -> None:
+    def _handle_success(self, worker: WorkerConnection, message: Message) -> None:
+        payload = message.payload
         task_id = str(payload["task_id"])
+        wait_seconds = max(0.0, float(payload.get("wait_seconds", 0.0)))
         with self._condition:
             task = self._tasks.get(task_id)
-            if task is None or self._task_state[task_id] == "done":
+            assignment_worker_id = str(
+                payload.get("assignment_worker_id", worker.worker_id)
+            )
+            assignment_worker = self._workers.get(assignment_worker_id)
+            if (
+                task is None
+                or self._task_state[task_id] != "assigned"
+                or assignment_worker is None
+                or task_id not in assignment_worker.assigned_task_ids
+            ):
                 return
             self._clear_assignment_locked(task_id)
             self._store[task.key] = task.value
             self._task_state[task_id] = "done"
             self._condition.notify_all()
+        self.stats.record_task_success(
+            worker.worker_id,
+            wait_seconds,
+            event_id=f"result:{message.request_id}",
+        )
         self._emit("RESULT", "SUCCESS", f"{task_id} completed by {worker.worker_id}.")
 
-    def _handle_failure(self, worker: WorkerConnection, payload: dict) -> None:
+    def _handle_failure(self, worker: WorkerConnection, message: Message) -> None:
+        payload = message.payload
         task_id = str(payload["task_id"])
         reason = str(payload.get("reason", "processing failure"))
+        wait_seconds = max(0.0, float(payload.get("wait_seconds", 0.0)))
         with self._condition:
             task = self._tasks.get(task_id)
-            if task is None or self._task_state[task_id] == "done":
+            assignment_worker_id = str(
+                payload.get("assignment_worker_id", worker.worker_id)
+            )
+            assignment_worker = self._workers.get(assignment_worker_id)
+            if (
+                task is None
+                or self._task_state[task_id] != "assigned"
+                or assignment_worker is None
+                or task_id not in assignment_worker.assigned_task_ids
+            ):
                 return
             self._clear_assignment_locked(task_id)
             if reason != "queue overflow":
@@ -286,6 +328,14 @@ class MasterRuntime:
             task.previous_worker_id = worker.worker_id
             self._queue_retry_locked(task_id)
             self._condition.notify_all()
+        if reason == "queue overflow":
+            self.stats.record_queue_overflow(worker.worker_id)
+        else:
+            self.stats.record_task_fail(
+                worker.worker_id,
+                wait_seconds,
+                event_id=f"result:{message.request_id}",
+            )
         self._emit("RESULT", "FAIL", f"{task_id} failed on {worker.worker_id}: {reason}.")
 
     def _clear_assignment_locked(self, task_id: str) -> None:
@@ -332,6 +382,10 @@ class MasterRuntime:
                     MessageType.TASK,
                     {"task": task.to_dict(), "priority": priority},
                 )
+                if priority:
+                    self.stats.record_reallocation(
+                        event_id=f"reallocation:{task.task_id}:{task.attempt}"
+                    )
                 self._emit("DISTRIB", "INFO", f"Sent {task.task_id} to {worker.worker_id}.")
             except OSError:
                 self._disconnect_worker(worker)
@@ -346,6 +400,7 @@ class MasterRuntime:
             return None
 
         task.enqueued_at = self.clock.read()
+        task.assignment_worker_id = worker.worker_id
         self._task_state[task.task_id] = "assigned"
         worker.assigned_task_ids.add(task.task_id)
         worker.status.queue_size += 1
@@ -412,20 +467,27 @@ class MasterRuntime:
             except OSError:
                 self._disconnect_worker(worker)
 
+    def _emit_statistics(self) -> None:
+        for line in self.stats.format_report_lines(self.clock.read()):
+            self._emit("STAT", "INFO", line)
+
     def _emit(self, event: str, status: str, message: str) -> None:
-        self._log(self.clock.read(), "MASTER", event, status, message)
+        self._log(self.clock.read(), "Master", event, status, message)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="분산 KV Store Master 실행")
     parser.add_argument("--host", default=DEFAULT_MASTER_BIND_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_MASTER_PORT)
+    parser.add_argument("--log-dir", default=".")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    MasterRuntime(host=args.host, port=args.port).run()
+    log_path = Path(args.log_dir) / "Master.txt"
+    with NodeLogger("Master", log_path) as logger:
+        MasterRuntime(host=args.host, port=args.port, log=logger).run()
 
 
 if __name__ == "__main__":
