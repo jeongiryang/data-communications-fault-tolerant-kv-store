@@ -11,6 +11,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from kvstore.common.clock import format_logical_duration
+
 # 과제 명세에 정의된 4가지 허용 STATUS
 VALID_STATUSES = frozenset({"INFO", "SUCCESS", "FAIL", "WARN"})
 ALWAYS_CONSOLE_EVENTS = frozenset({"INIT", "CONNECT", "PROGRESS", "STAT", "TERMINATE"})
@@ -26,6 +28,20 @@ def format_log_line(clock: float, node: str, event: str, status: str, message: s
         )
     # 논리 시계는 소수점 둘째 자리까지 표기해 가독성을 높인다.
     return f"[{clock:.2f}] {node} | {event} | {upper_status} | {message}"
+
+
+def format_console_log_line(
+    clock: float, node: str, event: str, status: str, message: str
+) -> str:
+    """터미널에서는 논리 시간을 시간·분·초 단위로 보여 준다."""
+    upper_status = status.upper()
+    if upper_status not in VALID_STATUSES:
+        raise ValueError(
+            f"유효하지 않은 STATUS: '{status}'. "
+            f"과제 규격상 INFO, SUCCESS, FAIL, WARN만 사용할 수 있습니다."
+        )
+    duration = format_logical_duration(clock)
+    return f"[논리시간 {duration}] {node} | {event} | {upper_status} | {message}"
 
 
 class NodeLogger:
@@ -56,7 +72,10 @@ class NodeLogger:
         line = format_log_line(clock, self.node_name, event, status, message)
         with self._lock:
             if self.print_to_console and self._should_print(event, status):
-                print(line, flush=True)
+                print(
+                    format_console_log_line(clock, self.node_name, event, status, message),
+                    flush=True,
+                )
             if self._file_handle is not None and not self._file_handle.closed:
                 self._file_handle.write(line + "\n")
                 self._file_handle.flush()
@@ -68,7 +87,10 @@ class NodeLogger:
         line = format_log_line(clock, target_node, event, status, message)
         with self._lock:
             if self.print_to_console and self._should_print(event, status):
-                print(line, flush=True)
+                print(
+                    format_console_log_line(clock, target_node, event, status, message),
+                    flush=True,
+                )
             if self._file_handle is not None and not self._file_handle.closed:
                 self._file_handle.write(line + "\n")
                 self._file_handle.flush()

@@ -4,7 +4,8 @@
 
 [clock] NODE | EVENT | STATUS | message
 
-- clock: 전역 논리 시계 값
+- clock: 전역 논리 시계의 누적 초 값. 제출용 로그 파일에는 `[5556.41]`, 터미널에는
+  `[논리시간 01시간 32분 36.41초]`처럼 같은 값을 읽기 쉬운 단위로 표시한다.
 - NODE: Master 또는 Worker1~Worker4
 - STATUS: INFO, SUCCESS, FAIL, WARN 중 하나
 - Master.txt와 Worker1.txt~Worker4.txt에 노드별 전체 로그를 저장한다.
@@ -96,4 +97,4 @@
 
 [PROGRESS]
 - Master | PROGRESS | INFO | 작업 처리 진행률: {completed}/5000
-  정상 처리된 작업이 500개 늘어날 때마다 터미널에서 진행 상황을 확인하기 위한 로그다.
+  정상 처리된 작업이 100개 늘어날 때마다 터미널에서 진행 상황을 확인하기 위한 로그다.

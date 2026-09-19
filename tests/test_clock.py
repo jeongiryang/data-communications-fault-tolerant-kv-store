@@ -1,10 +1,13 @@
 import threading
 import unittest
 
-from kvstore.common.clock import LogicalClock
+from kvstore.common.clock import LogicalClock, format_logical_duration
 
 
 class LogicalClockTests(unittest.TestCase):
+    def test_duration_is_formatted_with_clear_units(self) -> None:
+        self.assertEqual(format_logical_duration(5_556.41), "01시간 32분 36.41초")
+
     def test_concurrent_advances_are_not_lost(self) -> None:
         clock = LogicalClock()
 

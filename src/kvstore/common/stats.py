@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+
+from kvstore.common.clock import format_logical_duration
 from typing import Any
 
 
@@ -228,7 +230,8 @@ class StatsCollector:
         data = self.summary(total_simulation_seconds)
         lines = [
             "==================== 시뮬레이션 통계 ====================",
-            f"전체 시뮬레이션 시간: {data['total_simulation_time_seconds']:.2f}s",
+            f"전체 시뮬레이션 시간: {data['total_simulation_time_seconds']:.2f}초 "
+            f"({format_logical_duration(data['total_simulation_time_seconds'])})",
             f"전체 완료 작업: {data['total_throughput']} / 5000",
             f"전체 성공: {data['total_success_count']} | 전체 실패(20% 규칙): {data['total_fail_count']}",
             f"전체 평균 대기시간: {data['overall_average_wait_seconds']:.3f}s",
