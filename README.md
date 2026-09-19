@@ -39,6 +39,9 @@ P2P 부하 분산, 실패 작업 재할당을 수행하는 Key-Value Store 시�
 
 ## 4. 설치 및 실행
 
+AWS 콘솔 로그인부터 Master와 Worker 4개 실행, 결과 확인, EC2 중지까지의 실제 시연
+절차는 [`docs/manual-test-guide.md`](docs/manual-test-guide.md)를 따른다.
+
 ```bash
 python -m venv .venv
 ```
@@ -59,8 +62,8 @@ python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-Master와 Worker의 최종 실행 명령 및 전체 CLI 옵션은 통합 구현 후 이 절에 확정한다.
-IP, 포트, 비밀번호는 소스코드에 고정하지 않고 실행 인자 또는 설정으로 전달한다.
+Master와 Worker의 실제 실행 명령은 수동 테스트 가이드에 정리되어 있다. IP와 포트는
+소스코드에 고정하지 않고 실행 인자로 전달한다.
 
 ## 5. 동적 작업 분배 알고리즘
 
