@@ -1,0 +1,106 @@
+================================================================================
+                    분산 Key-Value Store 로그 명세서 (AllDefinedLogs.txt)
+================================================================================
+
+1. 로그 기본 형식 규격
+--------------------------------------------------------------------------------
+모든 노드(Master, Worker 1~4)는 과제 요구사항에 따라 다음 단일 표준 형식으로
+이벤트를 터미널에 출력하고 파일(Master.txt, Worker1~4.txt)에 기록합니다.
+
+    [clock] NODE | EVENT | STATUS | message
+
+- [clock]  : Thread-safe 전역 논리 시계(Logical Clock)의 현재 가상 누적 시간 (초 단위, 소수점 둘째 자리 표기)
+- NODE     : 이벤트를 발생시킨 노드 식별자 (예: Master, Worker1, Worker2, Worker3, Worker4)
+- EVENT    : 발생한 사건의 분류 (3절 참조)
+- STATUS   : 사건의 상태 코드 (INFO, SUCCESS, FAIL, WARN 4가지만 허용)
+- message  : 사건의 구체적인 내용, 작업 ID, 수치 정보 등
+
+
+2. 허용 STATUS 정의
+--------------------------------------------------------------------------------
+과제 요구사항에 따라 아래 4가지 STATUS 외의 다른 문자열(예: DEBUG, ERROR 등)은
+엄격히 배제하며, 로거 모듈(logger.py)에서 유효성을 사전 검증합니다.
+
+- INFO    : 시스템의 초기화, 연결 수립, 작업 분배, 일반 상태 보고 등 정보성 이벤트
+- SUCCESS : 작업 정상 완료, TCP 연결 성공, P2P 이전 ACK 확인 등 처리가 성공한 이벤트
+- FAIL    : 20% 확률 규칙에 의한 처리 실패, 큐 오버플로 거절, 통신 끊김 등 실패 이벤트
+- WARN    : Ready Queue 사용량이 70%(7개)를 초과하여 작업이 인입/인출될 때,
+            또는 예상 대기시간이 15초를 초과하여 과부하가 감지되었을 때 기록하는 경고 이벤트
+
+
+3. EVENT 종류 및 설명
+--------------------------------------------------------------------------------
+시스템 전반(Master, Worker, P2P 통신)에서 사용하는 10가지 이벤트 명세입니다.
+
+| EVENT     | 주 발생 노드     | 설명 및 발생 시점                                            |
+|:----------|:-----------------|:--------------------------------------------------------------|
+| INIT      | Master, Worker   | 노드 프로세스 시작, 큐 생성, 논리 시계 0.0 초기화 시점        |
+| CONNECT   | Master, Worker   | Master↔Worker 등록 소켓 및 Worker↔Worker P2P 소켓 연결/해제 |
+| DISTRIB   | Master           | 5,000개 작업을 Worker의 여유 용량을 확인하여 동적 분배할 때   |
+| RECV      | Master, Worker   | TCP 소켓을 통해 작업(Task), 상태, 결과 메시지를 수신했을 때   |
+| PROC      | Worker           | 작업 처리 시작 및 1~3초 가상 처리시간, 80:20 결과 결정 시점  |
+| RESULT    | Master, Worker   | Worker가 처리 결과 보고 전송 시, Master가 결과를 저장할 때     |
+| QUEUE     | Worker           | Ready Queue 작업 삽입/인출, 70% 초과 경고, 큐 가득 참 거절 시 |
+| LB        | Worker           | 대기시간 15초 초과 시 P2P 이웃 탐색, 1~3개 이전, ACK 처리 시  |
+| STAT      | Master, Worker   | 5,000개 처리 완료 후 6대 성능 평가 지표 및 종합 통계 출력 시  |
+| TERMINATE | Master, Worker   | 시뮬레이션 완료 후 정상 종료 신호 송수신 및 자원 해제 시      |
+
+
+4. 상세 로그 메시지 패턴 명세
+--------------------------------------------------------------------------------
+
+[INIT]
+- [clock] Master | INIT | INFO | Master initialized. System clock set to 0.0s.
+- [clock] Worker{id} | INIT | INFO | Worker initialized. Ready Queue capacity: 10.
+
+[CONNECT]
+- [clock] Worker{id} | CONNECT | SUCCESS | Connected to Master. Ready Queue initialized (0/10).
+- [clock] Master | CONNECT | SUCCESS | Worker registered: {worker_id} (P2P: {host}:{port}).
+- [clock] Worker{id} | CONNECT | FAIL | Failed to connect to Master ({host}:{port}): {reason}
+
+[DISTRIB]
+- [clock] Master | DISTRIB | INFO | Dispatched task KV[{task_id}] to {worker_id} (Queue: {size}/10).
+- [clock] Master | DISTRIB | INFO | Priority re-dispatch: KV[{task_id}] (attempt={attempt}) to {worker_id}.
+- [clock] Master | DISTRIB | WARN | All worker queues full. Pausing task distribution.
+
+[RECV]
+- [clock] Worker{id} | RECV | INFO | Received task: KV[{task_id}] (Key={key}, Value={value})
+- [clock] Worker{id} | RECV | WARN | Unhandled message type: {type}
+- [clock] Worker{id} | RECV | FAIL | Connection to Master lost.
+
+[PROC]
+- [clock] Worker{id} | PROC | INFO | Processing KV[{task_id}]...
+- [clock] Worker{id} | PROC | SUCCESS | KV[{task_id}] stored. time={processing_seconds}s.
+- [clock] Worker{id} | PROC | FAIL | KV[{task_id}] FAILED ({reason}). time={processing_seconds}s.
+
+[RESULT]
+- [clock] Master | RESULT | SUCCESS | KV[{task_id}] (Key={key}, Value={value}) committed to store.
+- [clock] Master | RESULT | FAIL | Task KV[{task_id}] failed on {worker_id}. Enqueued to Priority Queue.
+
+[QUEUE]
+- [clock] Worker{id} | QUEUE | WARN | Queue nearing full: {size}/10.
+- [clock] Worker{id} | QUEUE | WARN | Queue still above warn threshold after dequeue: {size}/10.
+- [clock] Worker{id} | QUEUE | WARN | Queue full ({size}/10). New task request rejected.
+
+[LB]
+- [clock] Worker{id} | LB | WARN | Overload detected: wait time={wait_time}s > 15s. Starting P2P offloading.
+- [clock] Worker{id} | LB | INFO | Queried neighbor {peer_id}: available capacity = {avail}/10.
+- [clock] Worker{id} | LB | INFO | Offloading {count} tasks to {peer_id}: [{task_ids}].
+- [clock] Worker{id} | LB | SUCCESS | P2P transfer verified with ACK from {peer_id} for [{task_ids}].
+- [clock] Worker{id} | LB | FAIL | P2P transfer to {peer_id} failed: {reason}. Tasks safely restored to queue.
+- [clock] Worker{peer_id} | LB | SUCCESS | Accepted {count} P2P transferred tasks from {sender_id}. Sent ACK.
+
+[STAT]
+- [clock] Master | STAT | INFO | ==================== Simulation Statistics ====================
+- [clock] Master | STAT | INFO | Total Simulation Time: {clock}s
+- [clock] Master | STAT | INFO | Worker {id} | Throughput: {tp} tasks | Success: {sc} | Fail: {fc} | AvgWait: {wait}s
+- [clock] Master | STAT | INFO | Total P2P Load Balancing Events: {p2p_count}
+- [clock] Master | STAT | INFO | Total Fault-Tolerance Reallocations: {realloc_count}
+- [clock] Master | STAT | INFO | ================================================================
+
+[TERMINATE]
+- [clock] Master | TERMINATE | INFO | All 5,000 tasks processed. Initiating graceful shutdown.
+- [clock] Worker{id} | TERMINATE | INFO | Termination signal received from Master.
+- [clock] Worker{id} | TERMINATE | SUCCESS | {worker_id} gracefully disconnected.
+- [clock] Master | TERMINATE | SUCCESS | All connections closed. Simulation finished successfully.
+================================================================================
