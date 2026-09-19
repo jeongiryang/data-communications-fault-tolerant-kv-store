@@ -36,6 +36,18 @@ python -m kvstore.worker.smoke_client `
 현재 stub은 `REGISTER -> ACK` 연결만 검증한다. 실제 Master 스케줄러와 Worker
 처리 루프는 각 담당 브랜치에서 공통 모듈을 사용해 구현한다.
 
+실제 Master 스케줄러와 연결할 때는 launcher 한 번으로 Worker 4개를 시작한다.
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m kvstore.worker.launcher `
+  --master-host <Master 주소> `
+  --master-port 5000
+```
+
+네 Worker는 한 프로세스 안의 독립 Thread로 실행되며 하나의 논리 시계를 공유한다.
+P2P 포트는 기본적으로 `6001`부터 `6004`까지 사용한다.
+
 ## 합의된 기반
 
 - Python 3.11 표준 라이브러리

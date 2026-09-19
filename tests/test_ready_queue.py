@@ -25,6 +25,17 @@ class ReadyQueueTests(unittest.TestCase):
 
         self.assertFalse(result.accepted)
         self.assertEqual(result.queue_size, 10)
+        self.assertEqual(result.reason, "full")
+
+    def test_rejects_duplicate_active_task(self):
+        queue = ReadyQueue(capacity=10)
+        queue.try_enqueue(_make_task("task-1"))
+
+        result = queue.try_enqueue(_make_task("task-1"))
+
+        self.assertFalse(result.accepted)
+        self.assertEqual(result.reason, "duplicate")
+        self.assertEqual(result.queue_size, 1)
 
     def test_priority_task_dequeued_before_normal(self):
         queue = ReadyQueue(capacity=10)
@@ -84,6 +95,17 @@ class ReadyQueueTests(unittest.TestCase):
 
         task = queue.dequeue_for_processing(timeout=0)
         self.assertEqual(task.task_id, "task-1")
+
+    def test_transfer_release_keeps_priority(self):
+        queue = ReadyQueue(capacity=10)
+        queue.try_enqueue(_make_task("normal"))
+        queue.try_enqueue(_make_task("priority"), priority=True)
+        queue.reserve_for_transfer("priority")
+
+        queue.release_reservation("priority")
+
+        task = queue.dequeue_for_processing(timeout=0)
+        self.assertEqual(task.task_id, "priority")
 
 
 if __name__ == "__main__":

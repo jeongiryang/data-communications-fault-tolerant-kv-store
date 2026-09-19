@@ -1,12 +1,13 @@
 import socket
 import threading
+import time
 import unittest
 import uuid
 
 from kvstore.common.clock import LogicalClock
 from kvstore.common.config import WorkerConfig
 from kvstore.common.models import Message, MessageType, Task
-from kvstore.common.protocol import receive_message, send_message
+from kvstore.common.protocol import encode_message, receive_message, send_message
 from kvstore.worker.ready_queue import ReadyQueue
 from kvstore.worker.runtime import WorkerRuntime
 
@@ -35,18 +36,14 @@ def _terminate_message() -> Message:
 
 
 def _drain_trailing_messages_and_terminate(conn, received: list[Message]) -> None:
-    """RESULT 직후 워커가 곧이어 보낼 수 있는 QUEUE_STATUS 등을 마저 읽고 나서 TERMINATE를
-    보낸다. 안 읽은 데이터가 남은 채로 소켓을 닫으면 OS가 FIN 대신 RST를 보낼 수 있고,
-    그러면 방금 보낸 TERMINATE까지 유실될 수 있어서 필요한 절차다."""
     conn.settimeout(0.3)
-    try:
-        while True:
+    while True:
+        try:
             trailing = receive_message(conn)
             received.append(trailing)
-    except OSError:
-        pass
-    finally:
-        conn.settimeout(5.0)
+        except OSError:
+            break
+    conn.settimeout(5.0)
     send_message(conn, _terminate_message())
 
 
@@ -63,8 +60,6 @@ def _task_message(task_id: str, key: str = "a3f7", value: int = 42) -> Message:
 
 
 def _start_fake_master(script):
-    """REGISTER -> ACK까지 처리한 뒤 나머지는 script(conn)에 맡기는 1회용 TCP 서버.
-    (host, port, server_socket, thread)를 돌려주며, 호출자가 정리한다."""
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("127.0.0.1", 0))
     server.listen(1)
@@ -90,7 +85,7 @@ def _start_fake_master(script):
             )
             script(conn)
         except OSError:
-            pass
+            return
         finally:
             conn.close()
 
@@ -132,12 +127,15 @@ class WorkerRuntimeTests(unittest.TestCase):
                     break
             _drain_trailing_messages_and_terminate(conn, received)
 
-        self._run_worker(script, rng=_ScriptedRandom(uniform_value=2.0, random_value=0.1))
+        worker = self._run_worker(
+            script, rng=_ScriptedRandom(uniform_value=2.0, random_value=0.1)
+        )
 
         successes = [m for m in received if m.message_type == MessageType.RESULT_SUCCESS]
         self.assertEqual(len(successes), 1)
         self.assertEqual(successes[0].payload["task_id"], "task-1")
         self.assertEqual(successes[0].payload["worker_id"], "worker-test")
+        self.assertEqual(worker.clock.read(), 7.0)
 
     def test_task_failure_flow(self):
         received: list[Message] = []
@@ -158,8 +156,45 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(failures[0].payload["task_id"], "task-2")
         self.assertEqual(failures[0].payload["reason"], "20% rule")
 
+    def test_registration_requires_matching_ack(self):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        host, port = server.getsockname()
+
+        def reply_with_wrong_request_id():
+            conn, _ = server.accept()
+            try:
+                receive_message(conn)
+                send_message(
+                    conn,
+                    Message(
+                        message_type=MessageType.ACK,
+                        sender_id="master",
+                        request_id="wrong-request-id",
+                        payload={},
+                    ),
+                )
+            finally:
+                conn.close()
+
+        master_thread = threading.Thread(target=reply_with_wrong_request_id)
+        master_thread.start()
+        config = WorkerConfig(
+            worker_id="worker-test",
+            master_host=host,
+            master_port=port,
+            p2p_host="127.0.0.1",
+            p2p_port=6001,
+        )
+
+        with self.assertRaises(RuntimeError):
+            WorkerRuntime(config).run()
+
+        server.close()
+        master_thread.join(timeout=2)
+
     def test_multiple_worker_instances_run_independently(self):
-        # Worker ID/포트만 바꿔 같은 코드를 여러 개 실행할 수 있어야 한다는 요구사항 검증.
         results: dict[str, list[Message]] = {"worker-a": [], "worker-b": []}
 
         def make_script(worker_key: str, task_id: str):
@@ -209,6 +244,26 @@ class WorkerRuntimeTests(unittest.TestCase):
         success_b = [m for m in results["worker-b"] if m.message_type == MessageType.RESULT_SUCCESS]
         self.assertEqual(success_a[0].payload["worker_id"], "worker-a")
         self.assertEqual(success_b[0].payload["worker_id"], "worker-b")
+
+    def test_fragmented_message_is_received_after_pause(self):
+        received: list[Message] = []
+
+        def script(conn):
+            frame = encode_message(_task_message("task-split"))
+            conn.sendall(frame[:2])
+            time.sleep(0.6)
+            conn.sendall(frame[2:])
+            while True:
+                message = receive_message(conn)
+                received.append(message)
+                if message.message_type == MessageType.RESULT_SUCCESS:
+                    break
+            _drain_trailing_messages_and_terminate(conn, received)
+
+        self._run_worker(script, rng=_ScriptedRandom(uniform_value=1.0, random_value=0.1))
+
+        successes = [m for m in received if m.message_type == MessageType.RESULT_SUCCESS]
+        self.assertEqual(successes[0].payload["task_id"], "task-split")
 
 
 if __name__ == "__main__":

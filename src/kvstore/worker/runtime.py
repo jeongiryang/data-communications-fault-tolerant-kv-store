@@ -1,10 +1,3 @@
-"""최길웅 담당: Worker 메인 실행 흐름.
-
-Master에 REGISTER -> 메시지 수신 Thread + 작업 처리 Thread 분리 -> TERMINATE까지 처리한다.
-같은 코드를 --worker-id/--p2p-port만 바꿔서 실행하면 Worker1~4가 된다.
-"""
-from __future__ import annotations
-
 import argparse
 import random
 import socket
@@ -13,6 +6,7 @@ import uuid
 
 from kvstore.common.clock import LogicalClock
 from kvstore.common.config import (
+    COMMUNICATION_DELAY_SECONDS,
     DEFAULT_QUEUE_CAPACITY,
     DEFAULT_SOCKET_TIMEOUT_SECONDS,
     WorkerConfig,
@@ -30,12 +24,10 @@ from kvstore.worker.ready_queue import WARN_THRESHOLD_RATIO, ReadyQueue
 MIN_PROCESSING_SECONDS = 1.0
 MAX_PROCESSING_SECONDS = 3.0
 SUCCESS_PROBABILITY = 0.8
-POLL_TIMEOUT_SECONDS = 0.5
+QUEUE_WAIT_SECONDS = 0.5
 
 
 def _default_log(clock: float, node: str, event: str, status: str, message: str) -> None:
-    # 배준희 담당의 공통 Logger가 완성되면 이 함수 대신 교체해서 쓴다.
-    # 지금은 과제가 요구하는 로그 포맷만 맞춰 콘솔에 출력한다.
     print(f"[{clock:.2f}] {node} | {event} | {status} | {message}")
 
 
@@ -50,19 +42,24 @@ class WorkerRuntime:
         rng: random.Random | None = None,
     ) -> None:
         self.config = config
-        self.queue = queue or ReadyQueue(capacity=DEFAULT_QUEUE_CAPACITY)
-        self.clock = clock or LogicalClock()
+        self.queue = queue if queue is not None else ReadyQueue(capacity=DEFAULT_QUEUE_CAPACITY)
+        self.clock = clock if clock is not None else LogicalClock()
         self._log = log
         # 테스트에서 성공/실패를 강제로 재현할 수 있도록 주입 가능하게 둔다.
         # 실제 실행 시에는 매번 새 random.Random()이 생성되어 무작위성이 유지된다.
         self._rng = rng or random.Random()
         self._node_name = config.worker_id.upper()
         self._socket: socket.socket | None = None
-        self._send_lock = threading.Lock()  # recv 스레드와 처리 스레드가 같은 소켓을 공유해서 필요
+        # 수신 Thread와 처리 Thread가 같은 TCP 연결로 메시지를 보낸다.
+        self._send_lock = threading.Lock()
         self._shutdown = threading.Event()
+        self._terminated_by_master = False
 
     def run(self) -> None:
         self._socket = self._connect_and_register()
+        if self._shutdown.is_set():
+            self._socket.close()
+            return
         receiver = threading.Thread(
             target=self._receive_loop, name=f"{self.config.worker_id}-recv", daemon=True
         )
@@ -72,14 +69,26 @@ class WorkerRuntime:
         receiver.start()
         processor.start()
 
-        receiver.join()  # TERMINATE 수신 또는 연결 끊김으로 돌아올 때까지 대기
+        receiver.join()
         self._shutdown.set()
         self.queue.wake_all()
         processor.join()
 
         if self._socket is not None:
             self._socket.close()
-        self._emit("TERMINATE", "SUCCESS", f"{self.config.worker_id} gracefully disconnected.")
+        if self._terminated_by_master:
+            self._emit("TERMINATE", "SUCCESS", f"{self.config.worker_id} gracefully disconnected.")
+        else:
+            self._emit("TERMINATE", "FAIL", f"{self.config.worker_id} disconnected unexpectedly.")
+
+    def stop(self) -> None:
+        self._shutdown.set()
+        self.queue.wake_all()
+        if self._socket is not None:
+            try:
+                self._socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                return
 
     def _emit(self, event: str, status: str, message: str) -> None:
         self._log(self.clock.read(), self._node_name, event, status, message)
@@ -94,6 +103,7 @@ class WorkerRuntime:
             p2p_endpoint=WorkerEndpoint(host=self.config.p2p_host, port=self.config.p2p_port),
             queue_capacity=self.queue.capacity,
         )
+        self.clock.advance(COMMUNICATION_DELAY_SECONDS)
         request = Message(
             message_type=MessageType.REGISTER,
             sender_id=self.config.worker_id,
@@ -104,7 +114,7 @@ class WorkerRuntime:
         send_message(sock, request)
         response = receive_message(sock)
         self.clock.observe(response.logical_clock)
-        if response.message_type == MessageType.ERROR:
+        if response.message_type != MessageType.ACK or response.request_id != request.request_id:
             sock.close()
             raise RuntimeError(f"registration rejected by Master: {response.payload}")
 
@@ -113,8 +123,8 @@ class WorkerRuntime:
             "SUCCESS",
             f"Connected to Master. Ready Queue initialized (0/{self.queue.capacity}).",
         )
-        # 등록 이후 recv 루프는 짧은 timeout으로 주기적으로 깨어나며 blocking 대기한다.
-        sock.settimeout(POLL_TIMEOUT_SECONDS)
+        # 프레임 일부를 읽은 뒤 timeout이 나면 다음 메시지 경계를 잃을 수 있다.
+        sock.settimeout(None)
         return sock
 
     def _receive_loop(self) -> None:
@@ -122,21 +132,25 @@ class WorkerRuntime:
         while True:
             try:
                 message = receive_message(self._socket)
-            except socket.timeout:
-                continue
             except (EOFError, ProtocolError, OSError):
                 self._emit("RECV", "FAIL", "Connection to Master lost.")
                 return
 
             self.clock.observe(message.logical_clock)
 
-            if message.message_type == MessageType.TASK:
-                self._handle_task(message)
-            elif message.message_type == MessageType.TERMINATE:
-                self._emit("TERMINATE", "INFO", "Termination signal received from Master.")
+            try:
+                if message.message_type == MessageType.TASK:
+                    self._handle_task(message)
+                elif message.message_type == MessageType.TERMINATE:
+                    self._terminated_by_master = True
+                    self._emit("TERMINATE", "INFO", "Termination signal received from Master.")
+                    return
+                else:
+                    self._emit("RECV", "WARN", f"Unhandled message type: {message.message_type}")
+            except OSError:
+                self._emit("RECV", "FAIL", "Failed to send a response to Master.")
+                self.stop()
                 return
-            else:
-                self._emit("RECV", "WARN", f"Unhandled message type: {message.message_type}")
 
     def _handle_task(self, message: Message) -> None:
         task_payload = message.payload.get("task", {})
@@ -149,6 +163,10 @@ class WorkerRuntime:
 
         result = self.queue.try_enqueue(task, priority=priority)
         if not result.accepted:
+            if result.reason == "duplicate":
+                self._emit("QUEUE", "WARN", f"Duplicate task ignored: {task.task_id}.")
+                self._send_queue_status()
+                return
             self._emit(
                 "QUEUE",
                 "WARN",
@@ -171,7 +189,7 @@ class WorkerRuntime:
 
     def _process_loop(self) -> None:
         while not self._shutdown.is_set():
-            task = self.queue.dequeue_for_processing(timeout=POLL_TIMEOUT_SECONDS)
+            task = self.queue.dequeue_for_processing(timeout=QUEUE_WAIT_SECONDS)
             if task is None:
                 continue
 
@@ -185,6 +203,12 @@ class WorkerRuntime:
                     f"Queue still above warn threshold after dequeue: "
                     f"{status.queue_size}/{status.queue_capacity}.",
                 )
+            try:
+                self._send_queue_status()
+            except OSError:
+                self._emit("PROC", "FAIL", "Failed to send Queue status to Master.")
+                self.stop()
+                return
 
             self._emit("PROC", "INFO", f"Processing KV[{task.task_id}]...")
             processing_seconds = self._rng.uniform(MIN_PROCESSING_SECONDS, MAX_PROCESSING_SECONDS)
@@ -193,25 +217,31 @@ class WorkerRuntime:
             # 실제로 기다리지 않고, 결과가 확정되는 이 시점에 논리 시계만 정확히 한 번 올린다.
             self.clock.advance(processing_seconds)
 
-            if succeeded:
-                self._send_result_success(task, processing_seconds)
-            else:
-                self._send_result_fail(
-                    task, reason="20% rule", processing_seconds=processing_seconds
-                )
-            self.queue.mark_processing_done()
-            self._send_queue_status()
+            try:
+                if succeeded:
+                    self._send_result_success(task, processing_seconds)
+                else:
+                    self._send_result_fail(
+                        task, reason="20% rule", processing_seconds=processing_seconds
+                    )
+                self.queue.mark_processing_done()
+                self._send_queue_status()
+            except OSError:
+                self._emit("PROC", "FAIL", "Failed to send a result to Master.")
+                self.stop()
+                return
 
     def _send(self, message_type: MessageType, payload: dict) -> None:
-        message = Message(
-            message_type=message_type,
-            sender_id=self.config.worker_id,
-            request_id=str(uuid.uuid4()),
-            logical_clock=self.clock.read(),
-            payload=payload,
-        )
         assert self._socket is not None
         with self._send_lock:
+            self.clock.advance(COMMUNICATION_DELAY_SECONDS)
+            message = Message(
+                message_type=message_type,
+                sender_id=self.config.worker_id,
+                request_id=str(uuid.uuid4()),
+                logical_clock=self.clock.read(),
+                payload=payload,
+            )
             send_message(self._socket, message)
 
     def _send_result_success(self, task: Task, processing_seconds: float) -> None:
