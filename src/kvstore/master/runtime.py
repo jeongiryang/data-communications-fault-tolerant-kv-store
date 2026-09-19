@@ -52,6 +52,7 @@ class WorkerConnection:
     send_lock: threading.Lock = field(default_factory=threading.Lock)
     assigned_task_ids: set[str] = field(default_factory=set)
     connected: bool = True
+    termination_requested: bool = False
 
 
 class MasterRuntime:
@@ -240,6 +241,8 @@ class MasterRuntime:
             try:
                 message = receive_message(worker.sock)
             except (EOFError, OSError, ProtocolError):
+                if worker.termination_requested or self._stopped.is_set():
+                    return
                 self._disconnect_worker(worker)
                 return
 
@@ -462,9 +465,11 @@ class MasterRuntime:
         for worker in list(self._workers.values()):
             if not worker.connected:
                 continue
+            worker.termination_requested = True
             try:
                 self._send(worker, MessageType.TERMINATE, {})
             except OSError:
+                worker.termination_requested = False
                 self._disconnect_worker(worker)
 
     def _emit_statistics(self) -> None:

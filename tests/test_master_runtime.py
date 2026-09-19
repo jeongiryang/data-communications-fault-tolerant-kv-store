@@ -77,6 +77,7 @@ class MasterRuntimeTests(unittest.TestCase):
 
     def test_distributes_retries_and_terminates(self):
         assignments: list[tuple[str, str, bool]] = []
+        master_logs: list[tuple[float, str, str, str, str]] = []
         assignment_lock = threading.Lock()
         failed_once = threading.Event()
         worker_errors: list[Exception] = []
@@ -85,7 +86,7 @@ class MasterRuntimeTests(unittest.TestCase):
             port=0,
             task_count=24,
             rng=random.Random(3),
-            log=lambda *args: None,
+            log=lambda *args: master_logs.append(args),
         )
 
         master_thread = threading.Thread(target=master.run)
@@ -187,6 +188,12 @@ class MasterRuntimeTests(unittest.TestCase):
         self.assertEqual(len(task_one_assignments), 2)
         self.assertNotEqual(task_one_assignments[0][1], task_one_assignments[1][1])
         self.assertTrue(task_one_assignments[1][2])
+        self.assertFalse(
+            any(
+                event == "CONNECT" and status == "FAIL"
+                for _, _, event, status, _ in master_logs
+            )
+        )
 
 
 if __name__ == "__main__":

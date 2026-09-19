@@ -196,7 +196,7 @@ cd /opt/kvstore && git pull --ff-only origin main && bash scripts/run-master.sh
 초기 구축 때 사용했던 등록 확인용 서버가 자동 실행될 수 있으므로 먼저 중지한다.
 
 ```bash
-sudo systemctl stop kvstore-master.service
+sudo systemctl disable --now kvstore-master.service
 ```
 
 Master 로그를 저장할 폴더를 만들고 실제 Master를 실행한다.
@@ -413,7 +413,7 @@ Master 로그 경로를 찾지 못하면 실행 명령에서 `--log-dir` 뒤에
 등록 확인용 서버가 5000번 포트를 사용 중일 가능성이 크다.
 
 ```bash
-sudo systemctl stop kvstore-master.service
+sudo systemctl disable --now kvstore-master.service
 sudo ss -ltnp 'sport = :5000'
 ```
 
