@@ -53,13 +53,13 @@ Windows PowerShell에서 `<AWS-IP>`를 전달받은 실제 주소로 바꿔 다�
 PowerShell을 어느 폴더에서 열어도 된다.
 
 ```powershell
-$s = Get-ChildItem $HOME -Filter run-workers.cmd -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1; $r = Split-Path (Split-Path $s.FullName -Parent) -Parent; git -C $r switch main; if ($LASTEXITCODE) { exit }; git -C $r pull --ff-only origin main; if ($LASTEXITCODE) { exit }; & "$r\scripts\run-workers.cmd" <AWS-IP>
+$s = Get-ChildItem $HOME -Filter run-workers.cmd -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $s) { throw "Worker 저장소를 찾지 못했습니다." }; $r = Split-Path (Split-Path $s.FullName -Parent) -Parent; git -C $r switch main; if ($LASTEXITCODE) { throw "main 브랜치 전환에 실패했습니다." }; git -C $r pull --ff-only origin main; if ($LASTEXITCODE) { throw "최신 코드 반영에 실패했습니다." }; & "$r\scripts\run-workers.cmd" <AWS-IP>
 ```
 
 예를 들어 주소가 `12.34.56.78`이면 마지막 부분만 다음과 같이 입력한다.
 
 ```powershell
-$s = Get-ChildItem $HOME -Filter run-workers.cmd -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1; $r = Split-Path (Split-Path $s.FullName -Parent) -Parent; git -C $r switch main; if ($LASTEXITCODE) { exit }; git -C $r pull --ff-only origin main; if ($LASTEXITCODE) { exit }; & "$r\scripts\run-workers.cmd" 12.34.56.78
+$s = Get-ChildItem $HOME -Filter run-workers.cmd -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $s) { throw "Worker 저장소를 찾지 못했습니다." }; $r = Split-Path (Split-Path $s.FullName -Parent) -Parent; git -C $r switch main; if ($LASTEXITCODE) { throw "main 브랜치 전환에 실패했습니다." }; git -C $r pull --ff-only origin main; if ($LASTEXITCODE) { throw "최신 코드 반영에 실패했습니다." }; & "$r\scripts\run-workers.cmd" 12.34.56.78
 ```
 
 Master 스크립트와 Worker 스크립트는 저장소 최신화, 실행 환경 준비, 설치, 전체 테스트,
