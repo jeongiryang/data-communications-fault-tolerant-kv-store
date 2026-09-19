@@ -8,8 +8,8 @@
 
 ### 역할별 바로가기
 
-- [Master 노드 담당자가 읽을 부분](#master-role)
-- [Worker 노드 담당자가 읽을 부분](#worker-role)
+- [Master 노드 담당자가 읽을 부분(정이량)](#master-role)
+- [Worker 노드 담당자가 읽을 부분(최길웅, 배준희)](#worker-role)
 
 ### 전체 절차
 
