@@ -29,6 +29,7 @@ class Task:
     value: int
     attempt: int = 0
     previous_worker_id: str | None = None
+    assignment_worker_id: str | None = None
     enqueued_at: float = 0.0
 
     def __post_init__(self) -> None:
@@ -55,6 +56,9 @@ class Task:
         previous_worker_id = data.get("previous_worker_id")
         if previous_worker_id is not None:
             previous_worker_id = str(previous_worker_id)
+        assignment_worker_id = data.get("assignment_worker_id")
+        if assignment_worker_id is not None:
+            assignment_worker_id = str(assignment_worker_id)
 
         return cls(
             task_id=str(data["task_id"]),
@@ -62,6 +66,7 @@ class Task:
             value=int(data["value"]),
             attempt=int(data.get("attempt", 0)),
             previous_worker_id=previous_worker_id,
+            assignment_worker_id=assignment_worker_id,
             enqueued_at=float(data.get("enqueued_at", 0.0)),
         )
 

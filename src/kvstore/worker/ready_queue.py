@@ -61,6 +61,21 @@ class ReadyQueue:
             self._not_empty.notify()
             return self._result_locked(accepted=True)
 
+    def try_enqueue_many(self, tasks: list[Task]) -> QueueChangeResult:
+        """P2P로 받은 작업을 모두 넣을 수 있을 때만 한 번에 추가한다."""
+        with self._lock:
+            task_ids = [task.task_id for task in tasks]
+            if len(task_ids) != len(set(task_ids)):
+                return self._result_locked(accepted=False, reason="duplicate")
+            if any(task_id in self._active_task_ids for task_id in task_ids):
+                return self._result_locked(accepted=False, reason="duplicate")
+            if self._size_locked() + len(tasks) > self._capacity:
+                return self._result_locked(accepted=False, reason="full")
+            self._normal.extend(tasks)
+            self._active_task_ids.update(task_ids)
+            self._not_empty.notify_all()
+            return self._result_locked(accepted=True)
+
     def dequeue_for_processing(self, timeout: float | None = None) -> Task | None:
         # timeout을 짧게 주고 주기적으로 깨어나서 종료 신호(shutdown event)를 확인할 수 있게 한다.
         with self._not_empty:
@@ -95,7 +110,11 @@ class ReadyQueue:
         if count <= 0:
             raise ValueError("count must be positive")
         with self._lock:
-            return list(self._normal)[-count:]
+            candidates = list(self._normal)[-count:]
+            if len(candidates) < count:
+                needed = count - len(candidates)
+                candidates.extend(list(self._priority)[-needed:])
+            return candidates
 
     def reserve_for_transfer(self, task_id: str) -> Task | None:
         # ACK 전에는 소유권을 유지하되 처리 스레드가 가져가지 못하게 예약한다.

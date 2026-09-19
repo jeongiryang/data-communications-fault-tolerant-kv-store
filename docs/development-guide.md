@@ -68,6 +68,21 @@ python -m kvstore.master.runtime --host 0.0.0.0 --port 5000
 Master는 Worker 4개 등록이 끝난 뒤 5,000개 작업 분배를 시작한다. 테스트가 아닌 실제
 실행에서는 작업 수를 변경하지 않는다.
 
+실행 위치에 `Master.txt`, `Worker1.txt`~`Worker4.txt` 로그가 생성된다. 다른 폴더에
+저장하려면 Master에는 `--log-dir`, Worker launcher에는 실행 위치를 기준으로 로그
+폴더를 지정한다.
+
+## P2P 부하 분산
+
+각 Worker는 등록한 P2P 포트에서 TCP 요청을 받는다. Ready Queue의 예상 대기시간은
+`Queue 작업 수 × 2초`로 계산한다. 15초를 초과하면 다른 Worker의 Queue 여유를
+조회하고, 여유가 가장 큰 Worker에 1~3개 작업을 보낸다.
+
+송신 Worker는 작업을 먼저 예약한다. 수신 Worker가 모든 작업을 Queue에 넣고 ACK를
+보낸 뒤에만 송신 Queue에서 제거한다. 연결 오류, timeout, 거절 또는 잘못된 ACK가
+발생하면 예약을 풀어 원래 Queue에 그대로 둔다. 같은 전송 요청이 다시 도착해도
+`request_id`를 확인해 중복 삽입하지 않는다.
+
 ## 개발 부록
 
 - [공통 TCP 프로토콜](protocol-v0.1.md)
