@@ -227,21 +227,21 @@ class StatsCollector:
         """AllDefinedLogs.txt 규격에 맞춰 STAT 이벤트용 로그 문자열 목록을 생성한다."""
         data = self.summary(total_simulation_seconds)
         lines = [
-            "==================== Simulation Statistics ====================",
-            f"Total Simulation Time: {data['total_simulation_time_seconds']:.2f}s",
-            f"Total Completed Tasks: {data['total_throughput']} / 5000",
-            f"Total Success: {data['total_success_count']} | Total Fail (20% rule): {data['total_fail_count']}",
-            f"Overall Average Wait Time: {data['overall_average_wait_seconds']:.3f}s",
-            f"Total P2P Load Balancing Events: {data['total_p2p_events']} ({data['total_p2p_tasks_transferred']} tasks moved)",
-            f"Total Fault-Tolerance Reallocations: {data['total_reallocations']}",
+            "==================== 시뮬레이션 통계 ====================",
+            f"전체 시뮬레이션 시간: {data['total_simulation_time_seconds']:.2f}s",
+            f"전체 완료 작업: {data['total_throughput']} / 5000",
+            f"전체 성공: {data['total_success_count']} | 전체 실패(20% 규칙): {data['total_fail_count']}",
+            f"전체 평균 대기시간: {data['overall_average_wait_seconds']:.3f}s",
+            f"P2P 부하 분산: {data['total_p2p_events']}회 ({data['total_p2p_tasks_transferred']}개 작업 이동)",
+            f"장애 재할당: {data['total_reallocations']}건",
             "----------------------------------------------------------------",
         ]
         for w in data["worker_statistics"]:
             lines.append(
-                f"Worker {w['worker_id']} | Throughput: {w['throughput']} | "
-                f"Success: {w['success_count']} | Fail: {w['fail_count']} | "
-                f"AvgWait: {w['average_wait_seconds']:.3f}s | "
-                f"P2P (Sent: {w['p2p_transfers_sent']}, Recv: {w['p2p_transfers_received']})"
+                f"Worker {w['worker_id']} | 처리량: {w['throughput']} | "
+                f"성공: {w['success_count']} | 실패: {w['fail_count']} | "
+                f"평균대기시간: {w['average_wait_seconds']:.3f}s | "
+                f"P2P (송신: {w['p2p_transfers_sent']}, 수신: {w['p2p_transfers_received']})"
             )
         lines.append("================================================================")
         return lines

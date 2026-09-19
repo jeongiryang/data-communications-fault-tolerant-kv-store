@@ -100,9 +100,9 @@ class WorkerRuntime:
 
         self._emit_final_stats()
         if self._terminated_by_master:
-            self._emit("TERMINATE", "SUCCESS", f"{self.config.worker_id} gracefully disconnected.")
+            self._emit("TERMINATE", "SUCCESS", f"{self.config.worker_id}가 정상 종료했습니다.")
         else:
-            self._emit("TERMINATE", "FAIL", f"{self.config.worker_id} disconnected unexpectedly.")
+            self._emit("TERMINATE", "FAIL", f"{self.config.worker_id}가 비정상 종료했습니다.")
 
     def stop(self) -> None:
         self._shutdown.set()
@@ -140,12 +140,12 @@ class WorkerRuntime:
         self.clock.observe(response.logical_clock)
         if response.message_type != MessageType.ACK or response.request_id != request.request_id:
             sock.close()
-            raise RuntimeError(f"registration rejected by Master: {response.payload}")
+            raise RuntimeError(f"Master가 등록을 거부했습니다: {response.payload}")
 
         self._emit(
             "CONNECT",
             "SUCCESS",
-            f"Connected to Master. Ready Queue initialized (0/{self.queue.capacity}).",
+            f"Master 연결과 Ready Queue 초기화를 완료했습니다 (0/{self.queue.capacity}).",
         )
         # 프레임 일부를 읽은 뒤 timeout이 나면 다음 메시지 경계를 잃을 수 있다.
         sock.settimeout(None)
@@ -157,7 +157,7 @@ class WorkerRuntime:
             try:
                 message = receive_message(self._socket)
             except (EOFError, ProtocolError, OSError):
-                self._emit("RECV", "FAIL", "Connection to Master lost.")
+                self._emit("RECV", "FAIL", "Master 연결이 끊어졌습니다.")
                 return
 
             self.clock.observe(message.logical_clock)
@@ -167,12 +167,12 @@ class WorkerRuntime:
                     self._handle_task(message)
                 elif message.message_type == MessageType.TERMINATE:
                     self._terminated_by_master = True
-                    self._emit("TERMINATE", "INFO", "Termination signal received from Master.")
+                    self._emit("TERMINATE", "INFO", "Master의 종료 신호를 받았습니다.")
                     return
                 else:
-                    self._emit("RECV", "WARN", f"Unhandled message type: {message.message_type}")
+                    self._emit("RECV", "WARN", f"처리할 수 없는 메시지 유형입니다: {message.message_type}")
             except OSError:
-                self._emit("RECV", "FAIL", "Failed to send a response to Master.")
+                self._emit("RECV", "FAIL", "Master에 응답을 보내지 못했습니다.")
                 self.stop()
                 return
 
@@ -182,21 +182,21 @@ class WorkerRuntime:
         try:
             task = Task.from_dict(task_payload)
         except (KeyError, ValueError, TypeError) as exc:
-            self._emit("RECV", "FAIL", f"Invalid task payload rejected: {exc}")
+            self._emit("RECV", "FAIL", f"잘못된 작업 데이터를 거부했습니다: {exc}")
             return
 
         task.enqueued_at = self.clock.read()
         result = self.queue.try_enqueue(task, priority=priority)
         if not result.accepted:
             if result.reason == "duplicate":
-                self._emit("QUEUE", "WARN", f"Duplicate task ignored: {task.task_id}.")
+                self._emit("QUEUE", "WARN", f"중복 작업을 무시했습니다: {task.task_id}.")
                 self._send_queue_status()
                 return
             self._emit(
                 "QUEUE",
                 "WARN",
-                f"Queue full ({result.queue_size}/{result.queue_capacity}). "
-                f"New task request rejected.",
+                f"Queue가 가득 차서 작업을 거부했습니다 "
+                f"({result.queue_size}/{result.queue_capacity}).",
             )
             self.stats.record_queue_overflow(self.config.worker_id)
             self._send_result_fail(task, reason="queue overflow")
@@ -205,11 +205,11 @@ class WorkerRuntime:
         self._emit(
             "RECV",
             "INFO",
-            f"Received task: KV[{task.task_id}] (Key={task.key}, Value={task.value})",
+            f"작업 수신: KV[{task.task_id}] (Key={task.key}, Value={task.value})",
         )
         if result.warn:
             self._emit(
-                "QUEUE", "WARN", f"Queue nearing full: {result.queue_size}/{result.queue_capacity}."
+                "QUEUE", "WARN", f"Queue 사용량이 70%를 초과했습니다: {result.queue_size}/{result.queue_capacity}."
             )
             if result.queue_size * 2 > 15:
                 self._p2p.request_check()
@@ -229,17 +229,17 @@ class WorkerRuntime:
                 self._emit(
                     "QUEUE",
                     "WARN",
-                    f"Queue still above warn threshold after dequeue: "
+                    f"작업을 꺼낸 뒤에도 Queue 사용량이 70%를 초과합니다: "
                     f"{status.queue_size}/{status.queue_capacity}.",
                 )
             try:
                 self._send_queue_status()
             except OSError:
-                self._emit("PROC", "FAIL", "Failed to send Queue status to Master.")
+                self._emit("PROC", "FAIL", "Master에 Queue 상태를 보내지 못했습니다.")
                 self.stop()
                 return
 
-            self._emit("PROC", "INFO", f"Processing KV[{task.task_id}]...")
+            self._emit("PROC", "INFO", f"KV[{task.task_id}] 처리를 시작합니다.")
             processing_seconds = self._rng.uniform(MIN_PROCESSING_SECONDS, MAX_PROCESSING_SECONDS)
             succeeded = self._rng.random() < SUCCESS_PROBABILITY
 
@@ -269,7 +269,7 @@ class WorkerRuntime:
                 self.queue.mark_processing_done()
                 self._send_queue_status()
             except OSError:
-                self._emit("PROC", "FAIL", "Failed to send a result to Master.")
+                self._emit("PROC", "FAIL", "Master에 처리 결과를 보내지 못했습니다.")
                 self.stop()
                 return
 
@@ -301,7 +301,7 @@ class WorkerRuntime:
             },
         )
         self._emit(
-            "PROC", "SUCCESS", f"KV[{task.task_id}] stored. time={processing_seconds:.2f}s."
+            "PROC", "SUCCESS", f"KV[{task.task_id}] 저장 완료. 처리시간={processing_seconds:.2f}s."
         )
 
     def _send_result_fail(
@@ -322,8 +322,12 @@ class WorkerRuntime:
                 "wait_seconds": wait_seconds,
             },
         )
-        suffix = f" time={processing_seconds:.2f}s." if processing_seconds is not None else ""
-        self._emit("PROC", "FAIL", f"KV[{task.task_id}] FAILED ({reason}).{suffix}")
+        suffix = f" 처리시간={processing_seconds:.2f}s." if processing_seconds is not None else ""
+        reason_text = {
+            "20% rule": "20% 실패 규칙",
+            "queue overflow": "Queue 용량 초과",
+        }.get(reason, reason)
+        self._emit("PROC", "FAIL", f"KV[{task.task_id}] 처리 실패 ({reason_text}).{suffix}")
 
     def _send_queue_status(self) -> None:
         if self._socket is None or self._shutdown.is_set():
@@ -344,9 +348,9 @@ class WorkerRuntime:
         self._emit(
             "STAT",
             "INFO",
-            f"Throughput={worker.throughput}, Success={worker.success_count}, "
-            f"Fail={worker.fail_count}, AvgWait={worker.average_wait_seconds:.2f}s, "
-            f"P2P sent={worker.p2p_transfers_sent}, received={worker.p2p_transfers_received}.",
+            f"처리량={worker.throughput}, 성공={worker.success_count}, "
+            f"실패={worker.fail_count}, 평균대기시간={worker.average_wait_seconds:.2f}s, "
+            f"P2P 송신={worker.p2p_transfers_sent}, 수신={worker.p2p_transfers_received}.",
         )
 
 

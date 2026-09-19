@@ -27,7 +27,7 @@ EXPECTED_WORKERS = 4
 
 def generate_tasks(count: int = TASK_COUNT, rng: random.Random | None = None) -> list[Task]:
     if not 1 <= count <= 65_536:
-        raise ValueError("task count must be between 1 and 65536")
+        raise ValueError("작업 수는 1개 이상 65536개 이하여야 합니다")
     random_source = rng if rng is not None else random.Random()
     keys = random_source.sample(range(65_536), count)
     return [
@@ -114,7 +114,7 @@ class MasterRuntime:
             self.stop()
             for thread in self._receiver_threads:
                 thread.join(timeout=2.0)
-        self._emit("TERMINATE", "SUCCESS", f"Stored {len(self._store)} tasks.")
+        self._emit("TERMINATE", "SUCCESS", f"작업 {len(self._store)}개를 저장하고 정상 종료했습니다.")
         return self.store
 
     def stop(self) -> None:
@@ -143,7 +143,7 @@ class MasterRuntime:
                 self._tasks[task.task_id] = task
                 self._task_state[task.task_id] = "pending"
                 self._normal_tasks.append(task.task_id)
-        self._emit("INIT", "INFO", f"Created {len(tasks)} tasks.")
+        self._emit("INIT", "INFO", f"중복 없는 작업 {len(tasks)}개를 생성했습니다.")
 
     def _open_listener(self) -> None:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -154,7 +154,7 @@ class MasterRuntime:
         bound_host, bound_port = listener.getsockname()
         self.address = (str(bound_host), int(bound_port))
         self._listening.set()
-        self._emit("INIT", "SUCCESS", f"Listening on {bound_host}:{bound_port}.")
+        self._emit("INIT", "SUCCESS", f"{bound_host}:{bound_port}에서 Worker 연결을 기다립니다.")
 
     def _accept_workers(self) -> None:
         assert self._listener is not None
@@ -178,7 +178,7 @@ class MasterRuntime:
                     request_id=message.request_id,
                 )
                 conn.settimeout(None)
-                self._emit("CONNECT", "SUCCESS", f"Registered {worker.worker_id}.")
+                self._emit("CONNECT", "SUCCESS", f"{worker.worker_id} 등록을 완료했습니다.")
             except (EOFError, OSError, ProtocolError, ValueError) as exc:
                 self._remove_unconfirmed_worker(conn)
                 self._send_registration_error(conn, request_id, exc)
@@ -248,12 +248,12 @@ class MasterRuntime:
 
             self.clock.observe(message.logical_clock)
             if message.sender_id != worker.worker_id:
-                self._emit("RECV", "WARN", f"Ignored sender mismatch from {worker.worker_id}.")
+                self._emit("RECV", "WARN", f"{worker.worker_id}의 송신자 정보가 일치하지 않아 무시했습니다.")
                 continue
             try:
                 self._handle_message(worker, message)
             except (KeyError, TypeError, ValueError) as exc:
-                self._emit("RECV", "WARN", f"Invalid message from {worker.worker_id}: {exc}")
+                self._emit("RECV", "WARN", f"{worker.worker_id}의 잘못된 메시지를 거부했습니다: {exc}")
 
     def _handle_message(self, worker: WorkerConnection, message: Message) -> None:
         if message.message_type is MessageType.QUEUE_STATUS:
@@ -277,7 +277,7 @@ class MasterRuntime:
         elif message.message_type is MessageType.RESULT_FAIL:
             self._handle_failure(worker, message)
         else:
-            self._emit("RECV", "WARN", f"Unhandled message type: {message.message_type.value}.")
+            self._emit("RECV", "WARN", f"처리할 수 없는 메시지 유형입니다: {message.message_type.value}.")
 
     def _handle_success(self, worker: WorkerConnection, message: Message) -> None:
         payload = message.payload
@@ -299,13 +299,20 @@ class MasterRuntime:
             self._clear_assignment_locked(task_id)
             self._store[task.key] = task.value
             self._task_state[task_id] = "done"
+            completed_count = len(self._store)
             self._condition.notify_all()
         self.stats.record_task_success(
             worker.worker_id,
             wait_seconds,
             event_id=f"result:{message.request_id}",
         )
-        self._emit("RESULT", "SUCCESS", f"{task_id} completed by {worker.worker_id}.")
+        self._emit("RESULT", "SUCCESS", f"{task_id}을 {worker.worker_id}가 처리했습니다.")
+        if completed_count % 500 == 0 or completed_count == self.task_count:
+            self._emit(
+                "PROGRESS",
+                "INFO",
+                f"작업 처리 진행률: {completed_count}/{self.task_count}",
+            )
 
     def _handle_failure(self, worker: WorkerConnection, message: Message) -> None:
         payload = message.payload
@@ -339,7 +346,15 @@ class MasterRuntime:
                 wait_seconds,
                 event_id=f"result:{message.request_id}",
             )
-        self._emit("RESULT", "FAIL", f"{task_id} failed on {worker.worker_id}: {reason}.")
+        reason_text = {
+            "20% rule": "20% 실패 규칙",
+            "queue overflow": "Queue 용량 초과",
+        }.get(reason, reason)
+        self._emit(
+            "RESULT",
+            "FAIL",
+            f"{task_id}이 {worker.worker_id}에서 실패하여 우선 재할당합니다: {reason_text}.",
+        )
 
     def _clear_assignment_locked(self, task_id: str) -> None:
         for connection in self._workers.values():
@@ -364,7 +379,7 @@ class MasterRuntime:
                     self._queue_retry_locked(task_id)
             worker.assigned_task_ids.clear()
             self._condition.notify_all()
-        self._emit("CONNECT", "FAIL", f"Lost connection to {worker.worker_id}.")
+        self._emit("CONNECT", "FAIL", f"{worker.worker_id} 연결이 끊어졌습니다.")
 
     def _distribute_tasks(self) -> None:
         while not self._stopped.is_set():
@@ -372,7 +387,7 @@ class MasterRuntime:
                 if len(self._store) == self.task_count:
                     return
                 if not any(worker.connected for worker in self._workers.values()):
-                    raise RuntimeError("all Worker connections were lost")
+                    raise RuntimeError("모든 Worker 연결이 끊어졌습니다")
                 assignment = self._next_assignment_locked()
                 if assignment is None:
                     self._condition.wait(timeout=0.5)
@@ -389,7 +404,12 @@ class MasterRuntime:
                     self.stats.record_reallocation(
                         event_id=f"reallocation:{task.task_id}:{task.attempt}"
                     )
-                self._emit("DISTRIB", "INFO", f"Sent {task.task_id} to {worker.worker_id}.")
+                action = "우선 재할당" if priority else "분배"
+                self._emit(
+                    "DISTRIB",
+                    "INFO",
+                    f"{task.task_id}을 {worker.worker_id}에 {action}했습니다.",
+                )
             except OSError:
                 self._disconnect_worker(worker)
 

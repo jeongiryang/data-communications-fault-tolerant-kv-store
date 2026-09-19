@@ -194,6 +194,12 @@ class MasterRuntimeTests(unittest.TestCase):
                 for _, _, event, status, _ in master_logs
             )
         )
+        self.assertTrue(
+            any(
+                event == "PROGRESS" and message == "작업 처리 진행률: 24/24"
+                for _, _, event, _, message in master_logs
+            )
+        )
 
 
 if __name__ == "__main__":

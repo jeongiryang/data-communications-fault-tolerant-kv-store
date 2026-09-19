@@ -1,7 +1,9 @@
+import io
 import os
 import tempfile
 import threading
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from kvstore.common.logger import NodeLogger, format_log_line
@@ -66,6 +68,34 @@ class LoggerTests(unittest.TestCase):
 
             content = log_path.read_text(encoding="utf-8").strip()
             self.assertEqual(content, "[3.00] Worker2 | PROC | FAIL | 20% rule failure.")
+
+    def test_console_prints_key_events_but_file_keeps_every_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "Master.txt"
+            output = io.StringIO()
+            with redirect_stdout(output):
+                with NodeLogger("Master", log_file_path=log_path) as logger:
+                    logger.log(1.0, "DISTRIB", "INFO", "일반 작업 분배")
+                    for index in range(4):
+                        logger.log(2.0 + index, "QUEUE", "WARN", f"Queue 경고 {index}")
+                    for index in range(6):
+                        logger.log(6.0 + index, "RESULT", "FAIL", f"작업 실패 {index}")
+                    for index in range(6):
+                        logger.log(12.0 + index, "LB", "SUCCESS", f"P2P ACK 수신 {index}")
+                    logger.log(18.0, "CONNECT", "FAIL", "연결 오류")
+                    logger.log(19.0, "PROGRESS", "INFO", "500/5000 완료")
+
+            console = output.getvalue()
+            self.assertNotIn("일반 작업 분배", console)
+            self.assertIn("Queue 경고 0", console)
+            self.assertNotIn("Queue 경고 3", console)
+            self.assertIn("작업 실패 4", console)
+            self.assertNotIn("작업 실패 5", console)
+            self.assertIn("P2P ACK 수신 4", console)
+            self.assertNotIn("P2P ACK 수신 5", console)
+            self.assertIn("연결 오류", console)
+            self.assertIn("500/5000 완료", console)
+            self.assertEqual(len(log_path.read_text(encoding="utf-8").splitlines()), 19)
 
 
 if __name__ == "__main__":

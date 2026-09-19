@@ -93,9 +93,9 @@ class StatsTests(unittest.TestCase):
         lines = collector.format_report_lines(total_simulation_seconds=42.5)
         report_text = "\n".join(lines)
 
-        self.assertIn("Total Simulation Time: 42.50s", report_text)
+        self.assertIn("전체 시뮬레이션 시간: 42.50s", report_text)
         self.assertIn("Worker worker-1", report_text)
-        self.assertIn("Total P2P Load Balancing Events: 1 (2 tasks moved)", report_text)
+        self.assertIn("P2P 부하 분산: 1회 (2개 작업 이동)", report_text)
 
 
 if __name__ == "__main__":
