@@ -1,6 +1,17 @@
 import threading
 
 
+def format_logical_duration(seconds: float) -> str:
+    """누적 논리 시간을 사람이 읽기 쉬운 시간·분·초 형식으로 바꾼다."""
+    if seconds < 0:
+        raise ValueError("logical duration must be non-negative")
+    total_hundredths = round(seconds * 100)
+    total_seconds, hundredths = divmod(total_hundredths, 100)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, whole_seconds = divmod(remainder, 60)
+    return f"{hours:02d}시간 {minutes:02d}분 {whole_seconds:02d}.{hundredths:02d}초"
+
+
 class LogicalClock:
     """실제 시간을 기다리지 않고 과제의 가상 시간을 기록한다."""
 

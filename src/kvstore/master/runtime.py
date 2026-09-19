@@ -23,6 +23,7 @@ from kvstore.common.stats import StatsCollector
 
 TASK_COUNT = 5000
 EXPECTED_WORKERS = 4
+PROGRESS_INTERVAL = 100
 
 
 def generate_tasks(count: int = TASK_COUNT, rng: random.Random | None = None) -> list[Task]:
@@ -307,7 +308,7 @@ class MasterRuntime:
             event_id=f"result:{message.request_id}",
         )
         self._emit("RESULT", "SUCCESS", f"{task_id}을 {worker.worker_id}가 처리했습니다.")
-        if completed_count % 500 == 0 or completed_count == self.task_count:
+        if completed_count % PROGRESS_INTERVAL == 0 or completed_count == self.task_count:
             self._emit(
                 "PROGRESS",
                 "INFO",

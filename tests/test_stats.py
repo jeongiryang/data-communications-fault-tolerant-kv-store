@@ -93,7 +93,9 @@ class StatsTests(unittest.TestCase):
         lines = collector.format_report_lines(total_simulation_seconds=42.5)
         report_text = "\n".join(lines)
 
-        self.assertIn("전체 시뮬레이션 시간: 42.50s", report_text)
+        self.assertIn(
+            "전체 시뮬레이션 시간: 42.50초 (00시간 00분 42.50초)", report_text
+        )
         self.assertIn("Worker worker-1", report_text)
         self.assertIn("P2P 부하 분산: 1회 (2개 작업 이동)", report_text)
 

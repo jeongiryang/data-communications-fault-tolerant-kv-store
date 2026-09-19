@@ -6,13 +6,20 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from kvstore.common.logger import NodeLogger, format_log_line
+from kvstore.common.logger import NodeLogger, format_console_log_line, format_log_line
 
 
 class LoggerTests(unittest.TestCase):
     def test_format_log_line_conforms_to_spec(self) -> None:
         line = format_log_line(12.5, "Master", "INIT", "INFO", "Server started.")
         self.assertEqual(line, "[12.50] Master | INIT | INFO | Server started.")
+
+    def test_console_log_uses_readable_logical_time(self) -> None:
+        line = format_console_log_line(5_556.41, "Master", "PROGRESS", "INFO", "500/5000")
+        self.assertEqual(
+            line,
+            "[논리시간 01시간 32분 36.41초] Master | PROGRESS | INFO | 500/5000",
+        )
 
     def test_all_valid_statuses_are_accepted(self) -> None:
         for status in ("INFO", "SUCCESS", "FAIL", "WARN", "info", "success", "fail", "warn"):
@@ -95,6 +102,7 @@ class LoggerTests(unittest.TestCase):
             self.assertNotIn("P2P ACK 수신 5", console)
             self.assertIn("연결 오류", console)
             self.assertIn("500/5000 완료", console)
+            self.assertIn("[논리시간 00시간 00분 19.00초]", console)
             self.assertEqual(len(log_path.read_text(encoding="utf-8").splitlines()), 19)
 
 
