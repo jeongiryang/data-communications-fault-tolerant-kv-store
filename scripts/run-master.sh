@@ -16,8 +16,8 @@ fi
 .venv/bin/python -m pip install -e .
 .venv/bin/python -m unittest discover -s tests -q
 
-echo "[3/4] 기존 등록 확인용 서버를 중지합니다."
-sudo systemctl stop kvstore-master.service 2>/dev/null || true
+echo "[3/4] 기존 등록 확인용 서버를 비활성화합니다."
+sudo systemctl disable --now kvstore-master.service 2>/dev/null || true
 
 run_id="$(date +%Y%m%d-%H%M%S)"
 log_dir="/home/ubuntu/kvstore-manual-test-logs/$run_id"
