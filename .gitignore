@@ -33,6 +33,7 @@ dist/
 tmp/
 temp/
 logs/
+manual-test-logs/
 *.log
 *.pid
 

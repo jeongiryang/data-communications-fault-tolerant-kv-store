@@ -27,6 +27,28 @@ Worker ID와 연결 수가 겹칠 수 있으므로 한 명만 실행한다.
 팀원은 AWS 계정에 로그인하거나 EC2를 직접 조작할 필요가 없다. 오너가 전달할 정보는
 현재 EC2 퍼블릭 IPv4 주소 하나다.
 
+### 가장 간단한 실행 명령
+
+최초 한 번 저장소를 최신 상태로 받은 뒤에는 긴 명령을 다시 입력할 필요가 없다.
+
+오너는 AWS 터미널에서 다음 한 줄을 실행한다.
+
+```bash
+cd /opt/kvstore && git pull --ff-only origin main && bash scripts/run-master.sh
+```
+
+팀원은 저장소 폴더의 PowerShell에서 `<AWS-IP>`만 전달받은 주소로 바꿔 다음 한 줄을
+실행한다.
+
+```powershell
+.\scripts\run-workers.cmd <AWS-IP>
+```
+
+Master 스크립트는 코드 갱신, 설치, 테스트, 기존 Stub 중지, 로그 폴더 생성과 Master
+실행을 차례대로 처리한다. Worker 스크립트는 가상환경 준비, 설치, 테스트, Worker
+4개 실행과 정상 종료 확인을 처리한다. 아래의 상세 절차는 문제가 생겼을 때 각 단계를
+직접 확인하기 위한 설명이다.
+
 ## 1. 테스트 전에 준비할 것
 
 - AWS 계정 로그인 정보
@@ -100,6 +122,14 @@ OK
 
 ## 5. AWS에서 Master 실행하기
 
+평소에는 다음 한 줄만 실행하면 이 절의 준비와 Master 실행이 자동으로 진행된다.
+
+```bash
+cd /opt/kvstore && git pull --ff-only origin main && bash scripts/run-master.sh
+```
+
+아래 명령은 스크립트를 사용하지 않고 직접 실행해야 할 때만 사용한다.
+
 초기 구축 때 사용했던 등록 확인용 서버가 자동 실행될 수 있으므로 먼저 중지한다.
 
 ```bash
@@ -155,6 +185,16 @@ py -m venv .venv
 마지막 결과가 `OK`인지 확인한다.
 
 ## 7. 로컬에서 Worker 4개 실행하기
+
+평소에는 저장소 폴더에서 다음 한 줄만 실행한다.
+
+```powershell
+.\scripts\run-workers.cmd <AWS-IP>
+```
+
+스크립트가 설치와 테스트부터 Worker 4개 실행, 로그 저장, 정상 종료 확인까지 처리한다.
+로그는 실행 시각별로 `manual-test-logs\날짜-시간` 폴더에 저장된다. 아래 명령은
+스크립트를 사용하지 않고 직접 실행해야 할 때만 사용한다.
 
 먼저 이번 실행의 Worker 로그 폴더를 만든다.
 
