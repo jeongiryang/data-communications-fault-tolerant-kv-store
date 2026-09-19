@@ -4,6 +4,30 @@
 따라 할 수 있게 작성한 절차서다. 기본 구성은 AWS EC2에서 Master 1개를 실행하고,
 한 대의 Windows PC에서 Worker 4개를 각각 독립 Thread로 실행하는 방식이다.
 
+## 목차
+
+### 역할별 바로가기
+
+- [Master 노드 담당자가 읽을 부분](#master-role)
+- [Worker 노드 담당자가 읽을 부분](#worker-role)
+
+### 전체 절차
+
+- [0. 역할과 실행 순서](#step-0)
+- [1. 테스트 전 준비](#step-1)
+- [2. AWS 콘솔에서 EC2 시작](#step-2)
+- [3. AWS 서버 터미널 접속](#step-3)
+- [4. AWS 최신 코드와 테스트 확인](#step-4)
+- [5. AWS Master 실행](#step-5)
+- [6. 로컬 PC 저장소 준비](#step-6)
+- [7. 로컬 Worker 4개 실행](#step-7)
+- [8. 성공 여부와 로그 확인](#step-8)
+- [9. 테스트 후 EC2 중지](#step-9)
+- [10. 문제 해결](#step-10)
+- [11. 시연 영상 순서](#step-11)
+
+<a id="step-0"></a>
+
 ## 0. 먼저 역할과 실행 순서 확인하기
 
 한 번의 테스트에서는 **오너 한 명이 AWS Master를 실행하고, 팀원 한 명이 자신의
@@ -27,6 +51,35 @@ Worker ID와 연결 수가 겹칠 수 있으므로 한 명만 실행한다.
 팀원은 AWS 계정에 로그인하거나 EC2를 직접 조작할 필요가 없다. 오너가 전달할 정보는
 현재 EC2 퍼블릭 IPv4 주소 하나다.
 
+<a id="master-role"></a>
+
+### Master 노드 담당자가 읽을 부분
+
+Master 노드 담당자는 다음 절만 순서대로 읽으면 된다.
+
+1. [AWS 콘솔에서 EC2 시작](#step-2)
+2. [AWS 서버 터미널 접속](#step-3)
+3. [AWS 최신 코드와 테스트 확인](#step-4)
+4. [AWS Master 실행](#step-5)
+5. [Master 성공 여부와 로그 확인](#master-result)
+6. [테스트 후 EC2 중지](#step-9)
+
+Master를 실행한 뒤에는 현재 EC2 퍼블릭 IPv4 주소를 Worker 담당자에게 전달한다.
+
+<a id="worker-role"></a>
+
+### Worker 노드 담당자가 읽을 부분
+
+Worker 노드 담당자는 다음 절만 순서대로 읽으면 된다.
+
+1. [테스트 전 준비](#step-1)
+2. [로컬 PC 저장소 준비](#step-6)
+3. [로컬 Worker 4개 실행](#step-7)
+4. [Worker 성공 여부와 로그 확인](#worker-result)
+
+Worker 담당자는 AWS 콘솔에 로그인하지 않는다. Master 담당자가 “준비 완료”라고 알리고
+현재 공인 IP를 전달한 뒤에만 Worker 실행 명령을 입력한다.
+
 ### 가장 간단한 실행 명령
 
 최초 한 번 저장소를 최신 상태로 받은 뒤에는 긴 명령을 다시 입력할 필요가 없다.
@@ -49,6 +102,8 @@ Master 스크립트는 코드 갱신, 설치, 테스트, 기존 Stub 중지, 로
 4개 실행과 정상 종료 확인을 처리한다. 아래의 상세 절차는 문제가 생겼을 때 각 단계를
 직접 확인하기 위한 설명이다.
 
+<a id="step-1"></a>
+
 ## 1. 테스트 전에 준비할 것
 
 - AWS 계정 로그인 정보
@@ -70,6 +125,8 @@ git --version
 두 명령 모두 버전이 출력되어야 한다. `py` 명령이 없다면 Python을 먼저 설치하고,
 설치 화면에서 `Add Python to PATH`를 선택한다.
 
+<a id="step-2"></a>
+
 ## 2. AWS 콘솔에서 EC2 시작하기
 
 1. 웹 브라우저에서 [AWS Management Console](https://console.aws.amazon.com/)을 연다.
@@ -86,6 +143,8 @@ git --version
 표시된 **퍼블릭 IPv4 주소**를 복사해서 메모한다. 이 주소는 뒤에서 `<AWS-IP>`라고
 표시한다.
 
+<a id="step-3"></a>
+
 ## 3. AWS 서버 터미널 열기
 
 1. `data-communications-master` 인스턴스가 선택된 상태에서 화면 위 **연결**을 누른다.
@@ -97,6 +156,8 @@ git --version
 연결에 실패하면 인스턴스가 실행 중인지, 리전이 서울인지 먼저 확인한다. 계속
 실패하면 보안 그룹의 SSH 규칙이 서울 리전 EC2 Instance Connect 주소를 허용하는지
 확인한다.
+
+<a id="step-4"></a>
 
 ## 4. AWS에서 최신 코드와 테스트 확인하기
 
@@ -119,6 +180,8 @@ OK
 
 테스트 개수는 코드가 추가되면 늘어날 수 있다. 중요한 것은 마지막 결과가 `OK`인
 것이다.
+
+<a id="step-5"></a>
 
 ## 5. AWS에서 Master 실행하기
 
@@ -150,6 +213,8 @@ mkdir -p /home/ubuntu/kvstore-manual-test-logs
 Master는 Worker 4개가 연결될 때까지 기다린다. 이 터미널 탭은 닫지 않는다.
 `Created 5000 tasks`와 `Listening on 0.0.0.0:5000` 로그가 보이면 로컬 Worker를
 실행할 준비가 된 것이다.
+
+<a id="step-6"></a>
 
 ## 6. 로컬 PC에 저장소 준비하기
 
@@ -183,6 +248,8 @@ py -m venv .venv
 ```
 
 마지막 결과가 `OK`인지 확인한다.
+
+<a id="step-7"></a>
 
 ## 7. 로컬에서 Worker 4개 실행하기
 
@@ -238,10 +305,14 @@ TCP 주소를 사용한다.
 실행 중에는 작업 성공과 실패, Queue 경고, 실패 작업 재할당, P2P 이전 로그가
 빠르게 출력된다. 논리 시간만 증가시키므로 실제로 1~3초씩 기다리지는 않는다.
 
+<a id="step-8"></a>
+
 ## 8. 테스트 성공 여부 확인하기
 
 긴 로그를 처음부터 읽을 필요는 없다. 오너와 Worker 실행 팀원이 아래의 짧은 확인
 명령만 각각 실행하면 된다.
+
+<a id="master-result"></a>
 
 ### 오너가 AWS에서 확인할 것
 
@@ -270,6 +341,8 @@ grep -E "Total Completed Tasks|Total Success|Total P2P|Total Fault|TERMINATE" /h
 - `Total Success: 5000`
 - P2P 이벤트와 장애 재할당이 0보다 큼
 - 마지막에 `TERMINATE | SUCCESS | Stored 5000 tasks.`가 있음
+
+<a id="worker-result"></a>
 
 ### Worker 실행 팀원이 Windows에서 확인할 것
 
@@ -315,6 +388,8 @@ Master 로그 경로를 찾지 못하면 실행 명령에서 `--log-dir` 뒤에
 `/home/ubuntu/kvstore-manual-test-logs`를 정확히 입력했는지 확인한다. `~` 또는 `\~`를
 직접 입력하지 않는다.
 
+<a id="step-9"></a>
+
 ## 9. 테스트가 끝난 뒤 EC2 중지하기
 
 테스트가 끝나면 실행 시간을 줄이기 위해 EC2를 바로 중지한다.
@@ -328,6 +403,8 @@ Master 로그 경로를 찾지 못하면 실행 명령에서 `--log-dir` 뒤에
 
 인스턴스를 종료하면 서버와 로그를 복구하기 어려우므로 제출 전에는 **종료**가 아닌
 **중지**를 선택한다.
+
+<a id="step-10"></a>
 
 ## 10. 자주 발생하는 문제
 
@@ -365,6 +442,8 @@ sudo ss -ltnp 'sport = :5000'
 
 이전에 실행한 Worker가 남아 있지 않은지 확인하고 해당 PowerShell 창을 종료한 뒤
 다시 실행한다. Worker 실행 명령을 동시에 두 번 실행하지 않는다.
+
+<a id="step-11"></a>
 
 ## 11. 시연할 때 보여줄 순서
 
