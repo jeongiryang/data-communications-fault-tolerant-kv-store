@@ -18,7 +18,7 @@ class LoggerTests(unittest.TestCase):
         line = format_console_log_line(5_556.41, "Master", "PROGRESS", "INFO", "500/5000")
         self.assertEqual(
             line,
-            "[논리시간 01시간 32분 36.41초] Master | PROGRESS | INFO | 500/5000",
+            "[5556.41초] Master | PROGRESS | INFO | 500/5000",
         )
 
     def test_all_valid_statuses_are_accepted(self) -> None:
@@ -102,7 +102,7 @@ class LoggerTests(unittest.TestCase):
             self.assertNotIn("P2P ACK 수신 5", console)
             self.assertIn("연결 오류", console)
             self.assertIn("500/5000 완료", console)
-            self.assertIn("[논리시간 00시간 00분 19.00초]", console)
+            self.assertIn("[19.00초]", console)
             self.assertEqual(len(log_path.read_text(encoding="utf-8").splitlines()), 19)
 
 
