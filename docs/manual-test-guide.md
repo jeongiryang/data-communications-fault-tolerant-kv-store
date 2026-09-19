@@ -6,6 +6,8 @@
 
 ## 목차
 
+- [가장 간단한 실행 명령](#quick-start)
+
 ### 역할별 바로가기
 
 - [Master 노드 담당자가 읽을 부분(정이량)](#master-role)
@@ -25,6 +27,44 @@
 - [9. 테스트 후 EC2 중지](#step-9)
 - [10. 문제 해결](#step-10)
 - [11. 시연 영상 순서](#step-11)
+
+<a id="quick-start"></a>
+
+## 가장 간단한 실행 명령
+
+아래 명령은 현재 터미널 위치와 관계없이 컴퓨터 안에서 실행 스크립트를 찾는다. 찾은
+저장소를 `main` 최신 상태로 갱신하고, 설치와 테스트를 거쳐 Master 또는 Worker를
+실행한다. 저장소 폴더로 직접 이동하거나 `git pull`을 따로 입력할 필요가 없다.
+
+**Master 노드(오너):**
+
+AWS EC2 Instance Connect 터미널에서 다음 한 줄을 실행한다.
+
+```bash
+bash "$(find /opt /home/ubuntu -type f -name run-master.sh -print -quit 2>/dev/null)"
+```
+
+Master가 `Worker 연결을 기다립니다`라고 출력하면 AWS 화면의 현재 퍼블릭 IPv4 주소를
+팀원에게 전달한다.
+
+**Worker 노드(팀원):**
+
+Windows PowerShell에서 `<AWS-IP>`를 전달받은 실제 주소로 바꿔 다음 한 줄을 실행한다.
+PowerShell을 어느 폴더에서 열어도 된다.
+
+```powershell
+$s = Get-ChildItem $HOME -Filter run-workers.cmd -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1; $r = Split-Path (Split-Path $s.FullName -Parent) -Parent; git -C $r switch main; if ($LASTEXITCODE) { exit }; git -C $r pull --ff-only origin main; if ($LASTEXITCODE) { exit }; & "$r\scripts\run-workers.cmd" <AWS-IP>
+```
+
+예를 들어 주소가 `12.34.56.78`이면 마지막 부분만 다음과 같이 입력한다.
+
+```powershell
+$s = Get-ChildItem $HOME -Filter run-workers.cmd -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1; $r = Split-Path (Split-Path $s.FullName -Parent) -Parent; git -C $r switch main; if ($LASTEXITCODE) { exit }; git -C $r pull --ff-only origin main; if ($LASTEXITCODE) { exit }; & "$r\scripts\run-workers.cmd" 12.34.56.78
+```
+
+Master 스크립트와 Worker 스크립트는 저장소 최신화, 실행 환경 준비, 설치, 전체 테스트,
+로그 폴더 생성과 실행을 차례대로 처리한다. Worker 스크립트는 마지막에 Worker 4개의
+정상 종료도 확인한다. 아래 절차는 처음 준비하거나 오류가 생겼을 때만 읽으면 된다.
 
 <a id="step-0"></a>
 
@@ -79,28 +119,6 @@ Worker 노드 담당자는 다음 절만 순서대로 읽으면 된다.
 
 Worker 담당자는 AWS 콘솔에 로그인하지 않는다. Master 담당자가 “준비 완료”라고 알리고
 현재 공인 IP를 전달한 뒤에만 Worker 실행 명령을 입력한다.
-
-### 가장 간단한 실행 명령
-
-최초 한 번 저장소를 최신 상태로 받은 뒤에는 긴 명령을 다시 입력할 필요가 없다.
-
-오너는 AWS 터미널에서 다음 한 줄을 실행한다.
-
-```bash
-cd /opt/kvstore && git pull --ff-only origin main && bash scripts/run-master.sh
-```
-
-팀원은 저장소 폴더의 PowerShell에서 `<AWS-IP>`만 전달받은 주소로 바꿔 다음 한 줄을
-실행한다.
-
-```powershell
-.\scripts\run-workers.cmd <AWS-IP>
-```
-
-Master 스크립트는 코드 갱신, 설치, 테스트, 기존 Stub 중지, 로그 폴더 생성과 Master
-실행을 차례대로 처리한다. Worker 스크립트는 가상환경 준비, 설치, 테스트, Worker
-4개 실행과 정상 종료 확인을 처리한다. 아래의 상세 절차는 문제가 생겼을 때 각 단계를
-직접 확인하기 위한 설명이다.
 
 <a id="step-1"></a>
 
@@ -185,7 +203,8 @@ OK
 
 ## 5. AWS에서 Master 실행하기
 
-평소에는 다음 한 줄만 실행하면 이 절의 준비와 Master 실행이 자동으로 진행된다.
+평소에는 문서 맨 위의 [가장 간단한 실행 명령](#quick-start)을 사용한다. 다음 명령은
+저장소 위치를 이미 알고 있을 때만 사용한다.
 
 ```bash
 cd /opt/kvstore && git pull --ff-only origin main && bash scripts/run-master.sh
@@ -253,13 +272,15 @@ py -m venv .venv
 
 ## 7. 로컬에서 Worker 4개 실행하기
 
-평소에는 저장소 폴더에서 다음 한 줄만 실행한다.
+평소에는 문서 맨 위의 [가장 간단한 실행 명령](#quick-start)을 사용한다. 다음 명령은
+저장소 폴더를 이미 열어 둔 경우에만 사용한다.
 
 ```powershell
 .\scripts\run-workers.cmd <AWS-IP>
 ```
 
-스크립트가 설치와 테스트부터 Worker 4개 실행, 로그 저장, 정상 종료 확인까지 처리한다.
+문서 맨 위의 가장 간단한 명령은 최신 코드를 반영한 뒤 이 스크립트를 실행한다. 이
+스크립트는 설치와 테스트부터 Worker 4개 실행, 로그 저장, 정상 종료 확인까지 처리한다.
 로그는 실행 시각별로 `manual-test-logs\날짜-시간` 폴더에 저장된다. 아래 명령은
 스크립트를 사용하지 않고 직접 실행해야 할 때만 사용한다.
 

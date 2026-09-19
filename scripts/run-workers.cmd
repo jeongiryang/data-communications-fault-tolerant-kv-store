@@ -3,8 +3,8 @@ chcp 65001 >nul
 setlocal
 
 if "%~1"=="" (
-    echo 사용법: scripts\run-workers.cmd AWS_IP
-    echo 예시: scripts\run-workers.cmd 12.34.56.78
+    echo 사용법: run-workers.cmd AWS_IP
+    echo 예시: run-workers.cmd 12.34.56.78
     exit /b 1
 )
 
