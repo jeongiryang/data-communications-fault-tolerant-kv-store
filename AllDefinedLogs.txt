@@ -5,7 +5,7 @@
 [clock] NODE | EVENT | STATUS | message
 
 - clock: 전역 논리 시계의 누적 초 값. 제출용 로그 파일에는 `[5556.41]`, 터미널에는
-  `[논리시간 01시간 32분 36.41초]`처럼 같은 값을 읽기 쉬운 단위로 표시한다.
+  `[5556.41초]`처럼 같은 값에 초 단위만 붙여 표시한다.
 - NODE: Master 또는 Worker1~Worker4
 - STATUS: INFO, SUCCESS, FAIL, WARN 중 하나
 - Master.txt와 Worker1.txt~Worker4.txt에 노드별 전체 로그를 저장한다.
@@ -83,7 +83,7 @@
 [STAT]
 - Master | STAT | INFO | 시뮬레이션 통계 및 전체·Worker별 통계 항목
   Worker별 처리량, 성공·실패, 평균 대기시간, P2P 횟수, 재할당 횟수,
-  System Clock 기준 전체 수행시간을 출력한다.
+  `전체 수행시간(초): {seconds}` 형식으로 System Clock 기준 수행시간을 출력한다.
 - Worker{id} | STAT | INFO | 처리량={count}, 성공={count}, 실패={count},
   평균대기시간={seconds}s, P2P 송신={count}, 수신={count}.
   각 Worker가 종료 직전에 출력하는 자체 통계다.
