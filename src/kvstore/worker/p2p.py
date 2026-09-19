@@ -64,7 +64,11 @@ class P2PService:
                 target=self._monitor, name=f"{self.worker_id}-p2p-monitor", daemon=True
             )
             self._monitor_thread.start()
-        self._emit("CONNECT", "SUCCESS", f"P2P server listening on {self.endpoint.host}:{self.endpoint.port}.")
+        self._emit(
+            "CONNECT",
+            "SUCCESS",
+            f"{self.endpoint.host}:{self.endpoint.port}에서 P2P 연결을 기다립니다.",
+        )
 
     def stop(self) -> None:
         self._shutdown.set()
@@ -104,7 +108,7 @@ class P2PService:
         self._emit(
             "LB",
             "WARN",
-            f"Overload detected: wait time={status.estimated_wait_seconds}s > 15s. Starting P2P offloading.",
+            f"예상 대기시간이 {status.estimated_wait_seconds}초로 15초를 초과하여 P2P 부하 분산을 시작합니다.",
         )
         peer_statuses: list[tuple[int, str]] = []
         for peer_id, endpoint in self.peers.items():
@@ -118,12 +122,12 @@ class P2PService:
             if response.sender_id != peer_id:
                 continue
             available = int(response.payload.get("available_capacity", 0))
-            self._emit("LB", "INFO", f"Queried neighbor {peer_id}: available capacity = {available}/10.")
+            self._emit("LB", "INFO", f"{peer_id}의 Queue 여유 공간: {available}/10.")
             if available > 0:
                 peer_statuses.append((available, peer_id))
 
         if not peer_statuses:
-            self._emit("LB", "WARN", "No peer has available Queue capacity.")
+            self._emit("LB", "WARN", "작업을 받을 수 있는 이웃 Worker가 없습니다.")
             return False
 
         peer_statuses.sort(key=lambda item: (-item[0], item[1]))
@@ -141,7 +145,7 @@ class P2PService:
 
         task_ids = [task.task_id for task in reserved]
         request_id = str(uuid.uuid4())
-        self._emit("LB", "INFO", f"Offloading {len(reserved)} tasks to {peer_id}: {task_ids}.")
+        self._emit("LB", "INFO", f"{peer_id}에 작업 {len(reserved)}개를 이전합니다: {task_ids}.")
         response = self._request(
             self.peers[peer_id],
             MessageType.P2P_TRANSFER,
@@ -160,7 +164,7 @@ class P2PService:
         if not accepted:
             for task in reserved:
                 self.queue.release_reservation(task.task_id)
-            self._emit("LB", "FAIL", f"P2P transfer to {peer_id} failed. Tasks restored to Queue.")
+            self._emit("LB", "FAIL", f"{peer_id}로 P2P 이전하지 못해 작업을 Queue에 복구했습니다.")
             return False
 
         for task in reserved:
@@ -172,7 +176,7 @@ class P2PService:
             event_id=f"p2p:{request_id}",
         )
         self._notify_queue_changed()
-        self._emit("LB", "SUCCESS", f"ACK received from {peer_id} for {task_ids}.")
+        self._emit("LB", "SUCCESS", f"{peer_id}의 ACK를 확인하고 작업을 제거했습니다: {task_ids}.")
         return True
 
     def _serve(self) -> None:
@@ -189,7 +193,7 @@ class P2PService:
                 try:
                     self._handle_connection(conn)
                 except (EOFError, OSError, ProtocolError, TypeError, ValueError) as exc:
-                    self._emit("LB", "FAIL", f"Invalid P2P request rejected: {exc}.")
+                    self._emit("LB", "FAIL", f"잘못된 P2P 요청을 거부했습니다: {exc}.")
 
     def _handle_connection(self, conn: socket.socket) -> None:
         message = receive_message(conn)
@@ -241,10 +245,10 @@ class P2PService:
             self._emit(
                 "LB",
                 "SUCCESS",
-                f"Accepted {len(tasks)} tasks from {message.sender_id}. ACK sent.",
+                f"{message.sender_id}의 작업 {len(tasks)}개를 받고 ACK를 보냈습니다.",
             )
         else:
-            self._emit("LB", "WARN", f"Rejected P2P transfer from {message.sender_id}: {result.reason}.")
+            self._emit("LB", "WARN", f"{message.sender_id}의 P2P 이전을 거부했습니다: {result.reason}.")
 
     def _request(
         self,

@@ -42,7 +42,7 @@ Worker ID와 연결 수가 겹칠 수 있으므로 한 명만 실행한다.
 실행 순서는 다음과 같다.
 
 1. 팀원이 1절과 6절을 진행해 로컬 실행 환경을 준비한다.
-2. 오너가 2~5절을 진행하고 Master에 `Listening on 0.0.0.0:5000`이 표시됐는지 확인한다.
+2. 오너가 2~5절을 진행하고 Master에 `0.0.0.0:5000에서 Worker 연결을 기다립니다`가 표시됐는지 확인한다.
 3. 오너가 현재 EC2 퍼블릭 IPv4 주소와 함께 “Master 준비 완료”라고 팀원에게 알린다.
 4. 팀원이 7절 명령의 `<AWS-IP>`를 전달받은 주소로 바꾸고 Worker를 실행한다.
 5. 오너와 팀원이 각각 8절의 성공 기준을 확인한다.
@@ -174,7 +174,7 @@ git pull --ff-only origin main
 마지막에 다음과 같이 출력되면 AWS의 코드 테스트가 통과한 것이다.
 
 ```text
-Ran 48 tests in ...
+Ran 49 tests in ...
 OK
 ```
 
@@ -211,7 +211,7 @@ mkdir -p /home/ubuntu/kvstore-manual-test-logs
 ```
 
 Master는 Worker 4개가 연결될 때까지 기다린다. 이 터미널 탭은 닫지 않는다.
-`Created 5000 tasks`와 `Listening on 0.0.0.0:5000` 로그가 보이면 로컬 Worker를
+`중복 없는 작업 5000개를 생성했습니다`와 `0.0.0.0:5000에서 Worker 연결을 기다립니다` 로그가 보이면 로컬 Worker를
 실행할 준비가 된 것이다.
 
 <a id="step-6"></a>
@@ -302,8 +302,11 @@ TCP 주소를 사용한다.
 | Worker3 | `127.0.0.1:6003` |
 | Worker4 | `127.0.0.1:6004` |
 
-실행 중에는 작업 성공과 실패, Queue 경고, 실패 작업 재할당, P2P 이전 로그가
-빠르게 출력된다. 논리 시간만 증가시키므로 실제로 1~3초씩 기다리지는 않는다.
+터미널에는 연결, 진행률, 통계와 종료처럼 시연에 필요한 로그를 항상 출력한다. 반복되는
+20% 작업 실패는 처음 5건과 이후 100건마다, P2P ACK는 처음 5건과 이후 10건마다,
+Queue 경고는 처음 3건만 보여 준다. 연결 실패 같은 오류는 항상 출력한다. 생략된 내용을
+포함한 작업별 상세 로그는 `Worker1.txt`~`Worker4.txt`에 모두 저장된다. 논리 시간만
+증가시키므로 실제로 1~3초씩 기다리지는 않는다.
 
 <a id="step-8"></a>
 
@@ -319,28 +322,28 @@ TCP 주소를 사용한다.
 모든 작업이 끝나면 AWS Master 터미널에 다음 내용이 출력되어야 한다.
 
 ```text
-Total Completed Tasks: 5000 / 5000
-Stored 5000 tasks
+전체 완료 작업: 5000 / 5000
+작업 5000개를 저장하고 정상 종료했습니다
 ```
 
 P2P와 장애 복구가 실제로 발생했는지도 Master 통계에서 확인한다.
 
-- `Total P2P Load Balancing Events`가 0보다 큰가
-- `Total Fault-Tolerance Reallocations`가 0보다 큰가
-- Worker별 Success 합계가 5,000인가
+- `P2P 부하 분산` 횟수가 0보다 큰가
+- `장애 재할당` 횟수가 0보다 큰가
+- Worker별 성공 합계가 5,000인가
 
 Master 로그에서 필수 결과만 다시 출력하려면 AWS 터미널에서 다음 명령을 실행한다.
 
 ```bash
-grep -E "Total Completed Tasks|Total Success|Total P2P|Total Fault|TERMINATE" /home/ubuntu/kvstore-manual-test-logs/Master.txt
+grep -E "전체 완료 작업|전체 성공|P2P 부하 분산|장애 재할당|TERMINATE" /home/ubuntu/kvstore-manual-test-logs/Master.txt
 ```
 
 다음 조건을 모두 만족하면 Master 실행은 성공이다.
 
-- `Total Completed Tasks: 5000 / 5000`
-- `Total Success: 5000`
+- `전체 완료 작업: 5000 / 5000`
+- `전체 성공: 5000`
 - P2P 이벤트와 장애 재할당이 0보다 큼
-- 마지막에 `TERMINATE | SUCCESS | Stored 5000 tasks.`가 있음
+- 마지막에 `TERMINATE | SUCCESS | 작업 5000개를 저장하고 정상 종료했습니다.`가 있음
 
 <a id="worker-result"></a>
 
@@ -364,8 +367,8 @@ explorer .\manual-test-logs
 각 `WorkerN.txt`를 메모장으로 열고 맨 아래에 다음 두 줄이 있는지만 확인해도 된다.
 
 ```text
-STAT | INFO | Throughput=...
-TERMINATE | SUCCESS | workerN gracefully disconnected.
+STAT | INFO | 처리량=...
+TERMINATE | SUCCESS | workerN가 정상 종료했습니다.
 ```
 
 다음 네 파일이 모두 있어야 한다.
@@ -427,7 +430,7 @@ sudo ss -ltnp 'sport = :5000'
 1. EC2가 `실행 중`인가
 2. EC2 상태 검사가 통과했는가
 3. Worker 명령의 `<AWS-IP>`를 현재 퍼블릭 IPv4 주소로 바꿨는가
-4. AWS Master 터미널에 `Listening on 0.0.0.0:5000`이 보이는가
+4. AWS Master 터미널에 `0.0.0.0:5000에서 Worker 연결을 기다립니다`가 보이는가
 5. EC2 보안 그룹에 TCP 5000 인바운드 규칙이 있는가
 
 ### 로컬에서 `No module named kvstore`가 나오는 경우

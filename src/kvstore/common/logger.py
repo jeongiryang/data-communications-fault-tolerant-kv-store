@@ -13,6 +13,7 @@ from pathlib import Path
 
 # 과제 명세에 정의된 4가지 허용 STATUS
 VALID_STATUSES = frozenset({"INFO", "SUCCESS", "FAIL", "WARN"})
+ALWAYS_CONSOLE_EVENTS = frozenset({"INIT", "CONNECT", "PROGRESS", "STAT", "TERMINATE"})
 
 
 def format_log_line(clock: float, node: str, event: str, status: str, message: str) -> str:
@@ -42,6 +43,7 @@ class NodeLogger:
         # 여러 스레드가 동시에 파일에 쓸 때 내용이 깨지지 않도록 Lock을 둔다.
         self._lock = threading.Lock()
         self._file_handle = None
+        self._console_counts: dict[tuple[str, str], int] = {}
 
         if self.log_file_path is not None:
             # 상위 디렉터리가 없으면 생성한다.
@@ -53,7 +55,7 @@ class NodeLogger:
         """이벤트를 규격에 맞춰 포맷팅하고 파일 및 콘솔에 기록한다."""
         line = format_log_line(clock, self.node_name, event, status, message)
         with self._lock:
-            if self.print_to_console:
+            if self.print_to_console and self._should_print(event, status):
                 print(line, flush=True)
             if self._file_handle is not None and not self._file_handle.closed:
                 self._file_handle.write(line + "\n")
@@ -65,11 +67,31 @@ class NodeLogger:
         target_node = node or self.node_name
         line = format_log_line(clock, target_node, event, status, message)
         with self._lock:
-            if self.print_to_console:
+            if self.print_to_console and self._should_print(event, status):
                 print(line, flush=True)
             if self._file_handle is not None and not self._file_handle.closed:
                 self._file_handle.write(line + "\n")
                 self._file_handle.flush()
+
+    def _should_print(self, event: str, status: str) -> bool:
+        upper_event = event.upper()
+        upper_status = status.upper()
+        key = (upper_event, upper_status)
+        self._console_counts[key] = self._console_counts.get(key, 0) + 1
+        count = self._console_counts[key]
+
+        if upper_event in ALWAYS_CONSOLE_EVENTS:
+            return True
+        # 반복되는 작업 실패와 P2P 성공은 대표 사례만 보여 주고 전체 내용은 파일에 남긴다.
+        if upper_event in {"PROC", "RESULT"} and upper_status == "FAIL":
+            return count <= 5 or count % 100 == 0
+        if upper_event == "LB" and upper_status == "SUCCESS":
+            return count <= 5 or count % 10 == 0
+        if upper_event == "QUEUE" and upper_status == "WARN":
+            return count <= 3
+        if upper_status == "FAIL":
+            return True
+        return False
 
     def close(self) -> None:
         """열려 있는 로그 파일 핸들을 안전하게 닫는다."""

@@ -8,85 +8,92 @@
 - NODE: Master 또는 Worker1~Worker4
 - STATUS: INFO, SUCCESS, FAIL, WARN 중 하나
 - Master.txt와 Worker1.txt~Worker4.txt에 노드별 전체 로그를 저장한다.
+- 파일에는 모든 상세 로그를 저장한다. 터미널에는 시작·연결·진행률·통계·종료를 항상 출력한다.
+- 반복되는 20% 작업 실패는 처음 5건과 이후 100건마다, P2P 성공은 처음 5건과 이후 10건마다 출력한다. Queue 경고는 처음 3건만 출력한다.
+- 연결 실패처럼 반복 작업이 아닌 오류는 터미널에도 항상 출력한다.
 
 2. EVENT와 메시지
 
 [INIT]
-- Master | INIT | INFO | Created {count} tasks.
+- Master | INIT | INFO | 중복 없는 작업 {count}개를 생성했습니다.
   중복 없는 작업을 생성한 시점이다.
-- Master | INIT | SUCCESS | Listening on {host}:{port}.
+- Master | INIT | SUCCESS | {host}:{port}에서 Worker 연결을 기다립니다.
   Worker 연결을 받을 TCP 서버가 열린 시점이다.
 
 [CONNECT]
-- Worker{id} | CONNECT | SUCCESS | P2P server listening on {host}:{port}.
+- Worker{id} | CONNECT | SUCCESS | {host}:{port}에서 P2P 연결을 기다립니다.
   Worker 간 통신을 받을 P2P 서버가 열린 시점이다.
-- Worker{id} | CONNECT | SUCCESS | Connected to Master. Ready Queue initialized (0/10).
+- Worker{id} | CONNECT | SUCCESS | Master 연결과 Ready Queue 초기화를 완료했습니다 (0/10).
   Master 등록과 Ready Queue 초기화가 끝난 시점이다.
-- Master | CONNECT | SUCCESS | Registered {worker_id}.
+- Master | CONNECT | SUCCESS | {worker_id} 등록을 완료했습니다.
   Worker 등록이 끝난 시점이다.
-- Master | CONNECT | FAIL | Lost connection to {worker_id}.
+- Master | CONNECT | FAIL | {worker_id} 연결이 끊어졌습니다.
   Worker 연결이 끊겨 담당 작업을 재할당해야 하는 시점이다.
 
 [DISTRIB]
-- Master | DISTRIB | INFO | Sent {task_id} to {worker_id}.
+- Master | DISTRIB | INFO | {task_id}을 {worker_id}에 {분배/우선 재할당}했습니다.
   일반 작업 또는 Priority Queue 작업을 Worker에 보낸 시점이다.
 
 [RECV]
-- Worker{id} | RECV | INFO | Received task: KV[{task_id}] (Key={key}, Value={value})
+- Worker{id} | RECV | INFO | 작업 수신: KV[{task_id}] (Key={key}, Value={value})
   Worker가 작업을 Ready Queue에 넣은 시점이다.
-- Master 또는 Worker{id} | RECV | WARN | Unhandled message type: {type}.
+- Master 또는 Worker{id} | RECV | WARN | 처리할 수 없는 메시지 유형입니다: {type}.
   현재 흐름에서 처리하지 않는 메시지를 받은 경우다.
-- Master | RECV | WARN | Ignored sender mismatch from {worker_id}.
-- Master | RECV | WARN | Invalid message from {worker_id}: {reason}
-- Worker{id} | RECV | FAIL | Invalid task payload rejected: {reason}
-- Worker{id} | RECV | FAIL | Connection to Master lost.
-- Worker{id} | RECV | FAIL | Failed to send a response to Master.
+- Master | RECV | WARN | {worker_id}의 송신자 정보가 일치하지 않아 무시했습니다.
+- Master | RECV | WARN | {worker_id}의 잘못된 메시지를 거부했습니다: {reason}
+- Worker{id} | RECV | FAIL | 잘못된 작업 데이터를 거부했습니다: {reason}
+- Worker{id} | RECV | FAIL | Master 연결이 끊어졌습니다.
+- Worker{id} | RECV | FAIL | Master에 응답을 보내지 못했습니다.
   송신자·payload 검증 실패 또는 Master 연결 오류가 발생한 경우다.
 
 [PROC]
-- Worker{id} | PROC | INFO | Processing KV[{task_id}]...
-- Worker{id} | PROC | SUCCESS | KV[{task_id}] stored. time={seconds}s.
-- Worker{id} | PROC | FAIL | KV[{task_id}] FAILED ({reason}). time={seconds}s.
-- Worker{id} | PROC | FAIL | Failed to send Queue status to Master.
-- Worker{id} | PROC | FAIL | Failed to send a result to Master.
+- Worker{id} | PROC | INFO | KV[{task_id}] 처리를 시작합니다.
+- Worker{id} | PROC | SUCCESS | KV[{task_id}] 저장 완료. 처리시간={seconds}s.
+- Worker{id} | PROC | FAIL | KV[{task_id}] 처리 실패 ({reason}). 처리시간={seconds}s.
+- Worker{id} | PROC | FAIL | Master에 Queue 상태를 보내지 못했습니다.
+- Worker{id} | PROC | FAIL | Master에 처리 결과를 보내지 못했습니다.
   처리 시작, 80:20 결과 또는 처리 중 통신 오류를 나타낸다.
 
 [RESULT]
-- Master | RESULT | SUCCESS | {task_id} completed by {worker_id}.
+- Master | RESULT | SUCCESS | {task_id}을 {worker_id}가 처리했습니다.
   성공 결과를 최종 Key-Value Store에 반영한 경우다.
-- Master | RESULT | FAIL | {task_id} failed on {worker_id}: {reason}.
+- Master | RESULT | FAIL | {task_id}이 {worker_id}에서 실패하여 우선 재할당합니다: {reason}.
   실패 작업을 Priority Queue에 넣은 경우다.
 
 [QUEUE]
-- Worker{id} | QUEUE | WARN | Duplicate task ignored: {task_id}.
-- Worker{id} | QUEUE | WARN | Queue full ({size}/10). New task request rejected.
-- Worker{id} | QUEUE | WARN | Queue nearing full: {size}/10.
-- Worker{id} | QUEUE | WARN | Queue still above warn threshold after dequeue: {size}/10.
+- Worker{id} | QUEUE | WARN | 중복 작업을 무시했습니다: {task_id}.
+- Worker{id} | QUEUE | WARN | Queue가 가득 차서 작업을 거부했습니다 ({size}/10).
+- Worker{id} | QUEUE | WARN | Queue 사용량이 70%를 초과했습니다: {size}/10.
+- Worker{id} | QUEUE | WARN | 작업을 꺼낸 뒤에도 Queue 사용량이 70%를 초과합니다: {size}/10.
   중복·overflow 또는 Queue 사용량이 70%를 초과한 경우다.
 
 [LB]
-- Worker{id} | LB | WARN | Overload detected: wait time={seconds}s > 15s. Starting P2P offloading.
-- Worker{id} | LB | INFO | Queried neighbor {peer_id}: available capacity = {count}/10.
-- Worker{id} | LB | INFO | Offloading {count} tasks to {peer_id}: {task_ids}.
-- Worker{id} | LB | SUCCESS | ACK received from {peer_id} for {task_ids}.
-- Worker{id} | LB | SUCCESS | Accepted {count} tasks from {peer_id}. ACK sent.
-- Worker{id} | LB | WARN | No peer has available Queue capacity.
-- Worker{id} | LB | WARN | Rejected P2P transfer from {peer_id}: {reason}.
-- Worker{id} | LB | FAIL | P2P transfer to {peer_id} failed. Tasks restored to Queue.
-- Worker{id} | LB | FAIL | Invalid P2P request rejected: {reason}.
+- Worker{id} | LB | WARN | 예상 대기시간이 {seconds}초로 15초를 초과하여 P2P 부하 분산을 시작합니다.
+- Worker{id} | LB | INFO | {peer_id}의 Queue 여유 공간: {count}/10.
+- Worker{id} | LB | INFO | {peer_id}에 작업 {count}개를 이전합니다: {task_ids}.
+- Worker{id} | LB | SUCCESS | {peer_id}의 ACK를 확인하고 작업을 제거했습니다: {task_ids}.
+- Worker{id} | LB | SUCCESS | {peer_id}의 작업 {count}개를 받고 ACK를 보냈습니다.
+- Worker{id} | LB | WARN | 작업을 받을 수 있는 이웃 Worker가 없습니다.
+- Worker{id} | LB | WARN | {peer_id}의 P2P 이전을 거부했습니다: {reason}.
+- Worker{id} | LB | FAIL | {peer_id}로 P2P 이전하지 못해 작업을 Queue에 복구했습니다.
+- Worker{id} | LB | FAIL | 잘못된 P2P 요청을 거부했습니다: {reason}.
   15초 초과 감지, 이웃 조회, 1~3개 이전, ACK, 거절·복구 흐름을 나타낸다.
 
 [STAT]
-- Master | STAT | INFO | Simulation Statistics 및 전체·Worker별 통계 항목
+- Master | STAT | INFO | 시뮬레이션 통계 및 전체·Worker별 통계 항목
   Worker별 처리량, 성공·실패, 평균 대기시간, P2P 횟수, 재할당 횟수,
   System Clock 기준 전체 수행시간을 출력한다.
-- Worker{id} | STAT | INFO | Throughput={count}, Success={count}, Fail={count},
-  AvgWait={seconds}s, P2P sent={count}, received={count}.
+- Worker{id} | STAT | INFO | 처리량={count}, 성공={count}, 실패={count},
+  평균대기시간={seconds}s, P2P 송신={count}, 수신={count}.
   각 Worker가 종료 직전에 출력하는 자체 통계다.
 
 [TERMINATE]
-- Worker{id} | TERMINATE | INFO | Termination signal received from Master.
-- Worker{id} | TERMINATE | SUCCESS | {worker_id} gracefully disconnected.
-- Worker{id} | TERMINATE | FAIL | {worker_id} disconnected unexpectedly.
-- Master | TERMINATE | SUCCESS | Stored {count} tasks.
+- Worker{id} | TERMINATE | INFO | Master의 종료 신호를 받았습니다.
+- Worker{id} | TERMINATE | SUCCESS | {worker_id}가 정상 종료했습니다.
+- Worker{id} | TERMINATE | FAIL | {worker_id}가 비정상 종료했습니다.
+- Master | TERMINATE | SUCCESS | 작업 {count}개를 저장하고 정상 종료했습니다.
   전체 작업 완료 후 정상 종료 또는 예기치 않은 연결 종료를 나타낸다.
+
+[PROGRESS]
+- Master | PROGRESS | INFO | 작업 처리 진행률: {completed}/5000
+  정상 처리된 작업이 500개 늘어날 때마다 터미널에서 진행 상황을 확인하기 위한 로그다.
