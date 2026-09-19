@@ -1,5 +1,9 @@
 # AWS Master 최소 배포 가이드
 
+이미 구축된 EC2에서 전체 프로그램을 직접 실행하려면
+[`manual-test-guide.md`](manual-test-guide.md)를 따른다. 이 문서는 신규 AWS 환경을
+구축하거나 네트워크 설정을 점검할 때 사용한다.
+
 과제에는 외부 클라우드 Master가 필수다. 이 가이드는 복잡한 관리 서비스를 추가하지
 않고 EC2 한 대에 Master를 배포하는 최소 구성을 사용한다.
 
@@ -54,6 +58,11 @@ Elastic IP를 별도로 만들지 않고, 시연할 때만 EC2의 자동 할당 
 - Worker PC 측 공인 IP가 바뀌면 Security Group source를 갱신한다.
 - Master 소켓은 EC2에서 `0.0.0.0:5000`에 bind한다.
 - Worker에는 EC2의 공인 IP 또는 DNS를 `--master-host`로 전달한다.
+
+위 표는 보안을 우선한 기본 권장 설정이다. 현재 과제 시연 환경은 연구실·집·노트북
+어디서든 접속할 수 있게 Master TCP 5000만 `0.0.0.0/0`으로 열어 두었다. SSH 22는
+서울 리전 EC2 Instance Connect 주소만 허용한다. Master에는 인증 기능이 없으므로
+시연하지 않을 때는 인스턴스를 중지하고, 제출이 끝나면 5000 규칙을 제거한다.
 
 Elastic IP는 만들지 않는다. 시연이 끝나면 EC2를 즉시 중지하고, 최종 제출이 끝나면
 인스턴스를 종료한다. Free plan의 남은 기간과 크레딧은 Billing 화면에서 매번 확인한다.
