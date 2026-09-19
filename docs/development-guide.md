@@ -58,6 +58,16 @@ P2P 포트는 기본적으로 `6001`부터 `6004`까지 사용한다.
 - Worker Ready Queue 크기: `10`
 - 네트워크 주소와 포트는 CLI 또는 설정으로 주입하며 코드에 개인 IP를 넣지 않는다.
 
+## Master 실행
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m kvstore.master.runtime --host 0.0.0.0 --port 5000
+```
+
+Master는 Worker 4개 등록이 끝난 뒤 5,000개 작업 분배를 시작한다. 테스트가 아닌 실제
+실행에서는 작업 수를 변경하지 않는다.
+
 ## 개발 부록
 
 - [공통 TCP 프로토콜](protocol-v0.1.md)
